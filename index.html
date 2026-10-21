@@ -86,6 +86,11 @@
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div><div id="wheelie" class="slow"><span>WHEELIE</span><div class="wl-bar"><i></i></div><small>40+ km/h</small></div></div>
     <div id="countdown"></div>
     <div id="stats" class="hidden"></div>
+    <div id="ytCard" class="hidden">
+      <div id="ytPlayer"></div>
+      <div id="ytGrip" title="Drag to move the player to another corner">⠿ drag</div>
+      <button id="ytHide" title="Hide the video (pauses the song)">✕</button>
+    </div>
     <div id="nowPlaying" class="hidden">
       <div id="npArt"></div>
       <div class="np-meta"><b id="npTitle"></b><small id="npArtist"></small></div>
@@ -136,10 +141,10 @@
       <button data-src="songs" class="on">Songs</button>
       <button data-src="live">Live radio</button>
     </div>
-    <form id="radioSearch"><input id="radioQuery" placeholder="Search songs or artists" autocomplete="off" spellcheck="false" /></form>
+    <form id="radioSearch"><input id="radioQuery" placeholder="Search any song on YouTube" autocomplete="off" spellcheck="false" /></form>
     <div class="chips" id="radioGenres"></div>
     <div id="radioBody"></div>
-    <p class="radio-credit">Songs streamed from <a href="https://audius.co" target="_blank" rel="noopener">Audius</a> · stations from <a href="https://www.radio-browser.info" target="_blank" rel="noopener">radio-browser.info</a></p>
+    <p class="radio-credit">Songs play through <a href="https://www.youtube.com" target="_blank" rel="noopener">YouTube</a> · search by <a href="https://invidious.io" target="_blank" rel="noopener">Invidious</a> · stations from <a href="https://www.radio-browser.info" target="_blank" rel="noopener">radio-browser.info</a></p>
   </div>
 
   <div id="pause" class="modal hidden">
@@ -162,7 +167,7 @@
         <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
         <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
         <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
-        <li><kbd>Q</kbd> — radio: search and play songs or live stations</li>
+        <li><kbd>Q</kbd> — radio: search any song (YouTube) or live stations</li>
         <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>
         <li><kbd>F3</kbd> — performance overlay (FPS, load)</li>
         <li>Gamepad: stick steer · RT/LT gas/brake · A handbrake · Y reset · B camera</li>
