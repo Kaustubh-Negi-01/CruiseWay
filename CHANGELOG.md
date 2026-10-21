@@ -10,6 +10,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - While up, steering is about 5× weaker and the bike wobbles, so you have to keep correcting. In return you get a small speed boost.
 - Hitting a wall or tree, braking or slowing down drops the front wheel.
 - Friends see your wheelies on your ghost bike.
+- In the cockpit and nose cameras the view pivots up with the bike and looks past it, so the sky fills the screen, the horizon drops to the bottom edge and only the top of the dash peeks into view. The look-up eases in over about a second and settles back when the front comes down.
 
 **Cornering in races**
 - Barriers sit about 2.8 m past the road edge, up from 1.1 m, so there's room to run wide.

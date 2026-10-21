@@ -14,6 +14,12 @@ const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
 const LOBBY_SECONDS = 15;   // gathering window before a race (any member can start early)
 const NOSE = new THREE.Vector3(0, 0.62, 1.34);
 const ROLL_Z = new THREE.Quaternion(), ROLL_FULL = new THREE.Quaternion();
+const PITCH = new THREE.Quaternion(), LOOK_UP = new THREE.Quaternion();
+// In a wheelie the first-person views look up further than the bike lifts
+// (like a rider sitting back), so the sky fills the screen, the horizon drops
+// to the bottom and the front of the bike sinks out of view.
+const WHEELIE_LOOK = 1.55;              // camera pitch per radian of front lift
+const WHEELIE_SIT = new THREE.Vector3(0, 0.12, -0.1);   // the rider's head goes up and back
 const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.1);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -440,7 +446,8 @@ export class Game {
   // Four views: chase, far chase, cockpit, nose. The chase camera trails the
   // heading with a soft lag and rolls a little with the lean; the cockpit and
   // nose cameras ride the bike's own frame (roll softened), so nothing on the
-  // bike can clip through the view.
+  // bike can clip through the view. In a wheelie both pivot up with the bike
+  // on its back tyre and look up past it.
   updateCamera(dt) {
     const c = this.car, s = c.spec, m = this.model;
     const mode = this.camMode;
@@ -457,11 +464,21 @@ export class Game {
     if (view !== 'chase') {
       // the eye leans with the bike (so the bike stays centred in view), but
       // the view itself only tilts part of the way, like a rider's head
+      // the head follows the bike up at once, then eases into looking further up
+      const w = c.wheelie;
+      this.lookLift = this.camPos ? this.lookLift + (w.angle - this.lookLift) * k(w.angle > this.lookLift ? 3 : 6) : w.angle;
+      const up = this.lookLift / WHEELIE.angle;   // 0 level, ~1 fully up
       ROLL_FULL.setFromAxisAngle(_v2.set(0, 0, 1), c.lean);
-      ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45);
-      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE).applyQuaternion(ROLL_FULL).applyQuaternion(m.quaternion).add(m.position);
+      ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45 + up * 0.05 * Math.sin(w.t * 1.7));
+      PITCH.setFromAxisAngle(_v2.set(1, 0, 0), -w.angle);
+      LOOK_UP.setFromAxisAngle(_v2.set(1, 0, 0), -(w.angle + this.lookLift * (WHEELIE_LOOK - 1)));
+      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE);
+      if (view === 'cockpit') eye.addScaledVector(WHEELIE_SIT, up);
+      eye.applyQuaternion(ROLL_FULL);
+      eye.z -= s.rearZ; eye.applyQuaternion(PITCH); eye.z += s.rearZ;   // pivot on the back tyre
+      eye.applyQuaternion(m.quaternion).add(m.position);
       this.camera.position.copy(eye);
-      _q.copy(m.quaternion).multiply(ROLL_Z).multiply(FLIP_Y).multiply(TILT);
+      _q.copy(m.quaternion).multiply(LOOK_UP).multiply(ROLL_Z).multiply(FLIP_Y).multiply(TILT);
       if (!this.camPos) { this.camQuat.copy(_q); this.camPos = eye.clone(); }
       this.camQuat.slerp(_q, k(22));
       this.camera.quaternion.copy(this.camQuat);
