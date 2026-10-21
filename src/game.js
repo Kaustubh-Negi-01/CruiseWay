@@ -2,19 +2,23 @@ import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Environment } from './world/sky.js';
 import { Bike } from './physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS } from './bike.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment } from './bike.js';
 import { RaceMarkers } from './markers.js';
+import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from './world/network.js';
 
 const SEND_HZ = 15;
-const INTERP_DELAY = 140; // ms behind newest snapshot when rendering ghosts
-const CP_RADIUS = 20;
-const INVITE_SECONDS = 15;
-const FINISH_GRACE = 60; // seconds others get after the winner crosses
+const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts
+const CP_RADIUS = 22;
+const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
+const LOBBY_SECONDS = 15;   // gathering window when others are in the world
+const SOLO_LOBBY = 3;
+const FINISH_GRACE = 60;    // seconds others get after the winner crosses
 
-// Game owns the 3D scene, the local car, the ghosts, and the session
-// protocol. The host runs the authoritative copy of the roster and races;
-// every message to clients also runs locally on the host (see sendAll), and
-// every message to the host is handled locally when we are the host (toHost).
+// Game owns the 3D scene, the local bike, the ghosts, navigation, and the
+// session protocol. The host's browser is the authority for the roster,
+// lobbies and races: every message to clients also runs locally on the host
+// (sendAll), and every message to the host is handled locally when we are
+// the host (toHost).
 export class Game {
   constructor(canvas, ui, input) {
     this.ui = ui;
@@ -25,10 +29,11 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 6000);
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 9000);
     this.camMode = 0;
     this.running = false;
     this.previewing = false;
+    this.bestTimes = {};       // spot id -> best time this session
     addEventListener('resize', () => this.resize());
     this.resize();
 
@@ -36,7 +41,15 @@ export class Game {
     input.on('camera', (d) => { if (d) this.camMode = (this.camMode + 1) % 3; });
   }
 
-  // Build (or reuse) the world for a seed: scene, terrain, sky, the bike.
+  resize() {
+    const w = innerWidth, h = innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // ---- world --------------------------------------------------------------
+
   loadWorld(seed, color = COLORS[0]) {
     if (this.world && this.world.seed === seed) {
       this.setModel(color);
@@ -45,10 +58,14 @@ export class Game {
     this.disposeWorld();
     const scene = (this.scene = new THREE.Scene());
     this.world = new World(scene, seed);
-    this.env = new Environment(scene);
+    this.env = new Environment(scene, this.renderer);
+    setBikeEnvironment(this.env.envMap);
+    this.world.water.material.envMap = this.env.envMap;
+    this.world.water.material.needsUpdate = true;
     this.car = new Bike(this.world);
+    this.model = null;
     this.setModel(color);
-    this.placeOnRoad(0, 1);
+    this.spawnHome();
     this.camPos = null;
   }
 
@@ -63,29 +80,55 @@ export class Game {
     this.renderer.renderLists.dispose();
   }
 
+  // a little way down the route of the first spot, facing along it
+  spawnHome() {
+    const spot = this.world.spots[0];
+    if (spot) {
+      const p = spot.route.at(Math.min(120, spot.route.length / 3));
+      this.placeAt(p, Math.atan2(p.tx, p.tz));
+    } else {
+      const e = this.world.net.edges[0];
+      const p = this.world.net.pointOnEdge(e, e.length / 2);
+      this.placeAt(p, Math.atan2(p.tx, p.tz));
+    }
+  }
+
+  placeAt(p, yaw) {
+    this.car.place(p.x, p.z, yaw);
+    this.camPos = null;
+  }
+
+  setModel(color) {
+    if (this.model && this.modelColor === color) return;
+    if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
+    this.model = buildBike(color);
+    this.modelColor = color;
+    this.scene.add(this.model);
+  }
+
   // Slow cinematic orbit behind the main menu.
   preview(seed) {
     this.loadWorld(seed);
     this.previewing = true;
     this.last = performance.now();
-    this.orbit = 0;
+    this.orbit = 0.6;
     const loop = () => {
       if (!this.previewing) return;
       this.raf = requestAnimationFrame(loop);
       const now = performance.now();
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
-      this.orbit += dt * 0.06;
+      this.orbit += dt * 0.07;
       const c = this.car;
       const fwd = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
       const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
       const cam = c.pos.clone()
-        .addScaledVector(fwd, Math.cos(this.orbit) * 7 - 2)
-        .addScaledVector(side, Math.sin(this.orbit) * 7)
-        .add(new THREE.Vector3(0, 1.6, 0));
-      cam.y = Math.max(cam.y, this.world.heightAt(cam.x, cam.z) + 0.8);
+        .addScaledVector(fwd, Math.cos(this.orbit) * 5.5)
+        .addScaledVector(side, Math.sin(this.orbit) * 5.5)
+        .add(new THREE.Vector3(0, 1.3, 0));
+      cam.y = Math.max(cam.y, this.world.heightAt(cam.x, cam.z) + 0.6);
       this.camera.position.copy(cam);
-      this.camera.lookAt(c.pos.clone().addScaledVector(fwd, 30).add(new THREE.Vector3(0, 2.5, 0)));
+      this.camera.lookAt(c.pos.clone().add(new THREE.Vector3(0, 0.8, 0)));
       this.car.update(dt, { steer: 0, throttle: 0, brake: 0, handbrake: false });
       this.car.applyTo(this.model);
       this.world.update(this.car.pos);
@@ -96,14 +139,7 @@ export class Game {
     loop();
   }
 
-  resize() {
-    const w = innerWidth, h = innerHeight;
-    this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-  }
-
-  // ---- lifecycle ----------------------------------------------------------
+  // ---- session ----------------------------------------------------------------
 
   start({ net, seed, name, welcome }) {
     this.previewing = false;
@@ -116,16 +152,21 @@ export class Game {
     this.hostId = this.isHost ? net.id : welcome.hostId;
     this.players = new Map(); // id -> { id, name, color, wins, ghost, buf }
     this.race = null;         // client-side race view
-    this.hostRace = null;     // host-only authoritative race
+    this.lobby = null;        // client-side lobby view
+    this.hostRace = null;     // host-only authoritative lobby/race
     this.latest = new Map();  // host: id -> latest snapshot
+    this.nav = null;          // { spot } or { x, z } + gps
+    this.prompted = null;     // spot id we've already asked about on this visit
 
     const myColor = this.isHost ? COLORS[0] : (welcome.roster.find((p) => p.id === welcome.you)?.color || COLORS[1]);
     this.loadWorld(seed, myColor);
-
-    // spawn: host at the origin, guests just behind the host
-    const s = welcome?.spawnS != null ? welcome.spawnS - 25 : 0;
-    this.placeOnRoad(s, 1);
-    this.camPos = null;
+    if (welcome?.spawn) {
+      // guests appear just behind the host
+      const n = this.world.net.nearestAnywhere(welcome.spawn.x, welcome.spawn.z);
+      const e = this.world.net.edges[n.edge];
+      const p = n.s != null ? this.world.net.pointOnEdge(e, Math.max(0, n.s - 18)) : n;
+      this.placeAt(p, Math.atan2(n.tx, n.tz));
+    }
     this.car.odometer = 0;
 
     if (this.isHost) {
@@ -136,13 +177,13 @@ export class Game {
       net.on('message', (_from, msg) => this.clientHandle(msg));
       net.on('hostLost', () => this.ui.fatal('The host closed the world.'));
       this.clientHandle({ t: 'roster', list: welcome.roster });
+      if (welcome.lobby) this.clientHandle({ t: 'lobby', lobby: welcome.lobby });
       if (welcome.race) this.clientHandle({ t: 'race_start', race: welcome.race, participants: welcome.race.participants, late: true });
     }
     this.ui.setRoster(this.rosterList(), this.selfId, this.hostId);
 
     // Network ticks run off a worker timer: unlike requestAnimationFrame it
-    // keeps firing when the tab is in the background, so a host who tabs away
-    // keeps relaying everyone else's positions.
+    // keeps firing in a background tab, so a host who tabs away keeps relaying.
     const src = `setInterval(() => postMessage(0), ${Math.round(1000 / SEND_HZ)});`;
     this.ticker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     this.ticker.onmessage = () => this.netTick();
@@ -180,34 +221,22 @@ export class Game {
     this.disposeWorld();
   }
 
-  setModel(color) {
-    if (this.model && this.modelColor === color) return;
-    if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
-    this.model = buildBike(color);
-    this.modelColor = color;
-    this.scene.add(this.model);
-  }
-
-  placeOnRoad(s, dir) {
-    const p = this.world.road.at(s);
-    this.world.preload(p.x, p.z);
-    this.car.place(p.x, p.z, Math.atan2(p.tx * dir, p.tz * dir));
-  }
-
   resetCar() {
     const r = this.race;
     if (r && r.participant) {
       if (r.phase !== 'running' || r.finished) return;
-      const s = r.next > 0 ? r.cps[r.next - 1] : r.s0;
-      this.placeOnRoad(s, r.dir);
+      const s = r.next > 0 ? r.spot.checkpoints[r.next - 1] : r.spot.startS;
+      const p = r.spot.route.at(s);
+      this.placeAt(p, Math.atan2(p.tx, p.tz));
       return;
     }
-    const n = this.world.road.nearestAnywhere(this.car.pos.x, this.car.pos.z);
+    const n = this.world.net.nearestAnywhere(this.car.pos.x, this.car.pos.z);
     const fwd = Math.sin(this.car.yaw) * n.tx + Math.cos(this.car.yaw) * n.tz;
-    this.placeOnRoad(n.s, fwd >= 0 ? 1 : -1);
+    const dir = fwd >= 0 ? 1 : -1;
+    this.placeAt(n, Math.atan2(n.tx * dir, n.tz * dir));
   }
 
-  // ---- frame ----------------------------------------------------------------
+  // ---- frame ------------------------------------------------------------------
 
   frame() {
     const now = performance.now();
@@ -223,22 +252,38 @@ export class Game {
     this.updateGhosts(now);
     if (this.race) this.updateRace(now);
     if (this.markers) this.markers.update(now / 1000);
+    this.checkWater(dt);
+    this.checkSpots();
+    this.updateNav(now);
 
+    const surface = this.car.surface === KIND_DIRT ? 'dirt road' : this.car.surface === 0 ? 'off-road' : '';
     this.ui.hud({
       speed: Math.abs(this.car.forwardSpeed) * 3.6,
       odometer: this.car.odometer,
-      onRoad: this.car.onRoad,
+      surface,
       me: this.car.pos, yaw: this.car.yaw,
       others: [...this.players.values()].filter((p) => p.ghost).map((p) => ({ x: p.ghost.position.x, z: p.ghost.position.z, color: p.color, name: p.name })),
       race: this.race,
+      lobby: this.lobby,
+      nav: this.nav,
     });
-
     this.renderer.render(this.scene, this.camera);
+  }
+
+  // Riding into the sea or a lake: you're slowed right down, and if you stay
+  // under for a moment you're put back on the nearest road.
+  checkWater(dt) {
+    if (this.car.pos.y < -1.0) {
+      this.car.underwater += dt;
+      if (this.car.underwater > 1.4) {
+        this.ui.toast('Splash! Back on the road.');
+        this.resetCar();
+      }
+    } else this.car.underwater = 0;
   }
 
   updateCamera(dt) {
     const c = this.car, s = c.spec;
-    // the chase camera swings round lazily, so turns read as the bike leaning in
     if (this.camYaw == null || this.camPos == null) this.camYaw = c.yaw;
     let dy = c.yaw - this.camYaw;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
@@ -248,16 +293,14 @@ export class Game {
     let want, look;
     if (this.camMode === 2) {
       const head = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
-      want = bodyPos.clone().addScaledVector(head, 0.35).add(new THREE.Vector3(0, 1.55, 0));
-      look = want.clone().addScaledVector(head, 20).add(new THREE.Vector3(0, -1.2, 0));
+      want = bodyPos.clone().addScaledVector(head, 0.2).add(new THREE.Vector3(0, 1.2, 0));
+      look = want.clone().addScaledVector(head, 20).add(new THREE.Vector3(0, -1.0, 0));
       this.camPos = want.clone();
     } else {
       const far = this.camMode === 1 ? 1.8 : 1;
       want = bodyPos.clone().addScaledVector(fwd, -s.camDist * far).add(new THREE.Vector3(0, s.camHeight * far, 0));
-      look = bodyPos.clone().addScaledVector(fwd, 6).add(new THREE.Vector3(0, 1.1, 0));
+      look = bodyPos.clone().addScaledVector(fwd, 6).add(new THREE.Vector3(0, 0.9, 0));
       if (!this.camPos) this.camPos = want.clone();
-      // stay locked at a fixed distance (the yaw lag above gives the swing);
-      // only height is smoothed so bumps don't jolt the view
       this.camPos.x = want.x;
       this.camPos.z = want.z;
       this.camPos.y += (want.y - this.camPos.y) * (1 - Math.exp(-dt * 8));
@@ -269,6 +312,86 @@ export class Game {
     const targetFov = 68 + Math.min(16, Math.abs(c.forwardSpeed) * 0.3);
     this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.updateProjectionMatrix();
+  }
+
+  // ---- navigation (GPS) -----------------------------------------------------
+
+  setWaypointSpot(spot) {
+    this.nav = { spot, x: spot.route.at(spot.startS).x, z: spot.route.at(spot.startS).z, gps: null, at: 0 };
+    this.updateNav(performance.now(), true);
+  }
+
+  setWaypointPoint(x, z) {
+    this.nav = { spot: null, x, z, gps: null, at: 0 };
+    this.updateNav(performance.now(), true);
+  }
+
+  clearWaypoint() { this.nav = null; }
+
+  updateNav(now, force = false) {
+    const nav = this.nav;
+    if (!nav) return;
+    const d = Math.hypot(nav.x - this.car.pos.x, nav.z - this.car.pos.z);
+    nav.dist = d;
+    nav.bearing = Math.atan2(nav.x - this.car.pos.x, nav.z - this.car.pos.z);
+    if (d < (nav.spot ? SPOT_RADIUS : 30)) {
+      if (!nav.spot) { this.ui.toast('You have arrived.'); this.nav = null; }
+      else nav.gps = null;
+      return;
+    }
+    if (!force && now - nav.at < 1500) return;
+    nav.at = now;
+    const net = this.world.net;
+    const from = net.nearestAnywhere(this.car.pos.x, this.car.pos.z);
+    let target;
+    if (nav.spot) target = net.nodes[nav.spot.node];
+    else {
+      const t = net.nearestAnywhere(nav.x, nav.z);
+      const e = net.edges[t.edge];
+      target = t.node != null ? net.nodes[t.node] : net.nodes[t.s < e.length / 2 ? e.a : e.b];
+    }
+    const r = net.route(from, target.id);
+    if (!r) { nav.gps = null; return; }
+    const pts = [[this.car.pos.x, this.car.pos.z], ...r.pts];
+    if (nav.spot) {
+      // finish down the spot's first road to its start line
+      const route = nav.spot.route;
+      for (let s = 0; s <= nav.spot.startS; s += 3) { const p = route.at(s); pts.push([p.x, p.z]); }
+    } else pts.push([nav.x, nav.z]);
+    nav.gps = { pts, length: r.length };
+  }
+
+  // ---- race spots -----------------------------------------------------------
+
+  nearestSpot() {
+    let best = null;
+    for (const s of this.world.spots) {
+      const p = s.route.at(s.startS);
+      const d = Math.hypot(p.x - this.car.pos.x, p.z - this.car.pos.z);
+      if (!best || d < best.d) best = { spot: s, d };
+    }
+    return best;
+  }
+
+  checkSpots() {
+    const near = this.nearestSpot();
+    if (!near) return;
+    const { spot, d } = near;
+    if (this.prompted != null && (this.prompted !== spot.id || d > 70)) {
+      // rode away: forget the visit, and leave its lobby if we were in it
+      if (this.lobby && this.lobby.spot === this.prompted && this.lobby.members.includes(this.selfId)) this.toHost({ t: 'spot_leave' });
+      this.prompted = null;
+      this.ui.closeSpotPrompt();
+    }
+    if (d < SPOT_RADIUS && this.prompted == null && !(this.race && this.race.participant)) {
+      this.prompted = spot.id;
+      if (this.nav && this.nav.spot === spot) this.nav = null;
+      const busy = this.race ? `A race is running at ${this.world.spots[this.race.spot.id].name}. Try again when it ends.`
+        : this.lobby && this.lobby.spot !== spot.id ? `Riders are gathering at ${this.world.spots[this.lobby.spot].name}.` : null;
+      this.ui.spotPrompt(spot, this.bestTimes[spot.id], busy, (yes) => {
+        if (yes) this.toHost({ t: 'spot_join', spot: spot.id });
+      });
+    }
   }
 
   // ---- ghosts -----------------------------------------------------------------
@@ -295,9 +418,8 @@ export class Game {
       const ud = g.userData;
       ud.lean.rotation.z = a.s.l + (b.s.l - a.s.l) * t;
       ud.steerer.rotation.y = (a.s.st || 0) * 0.25 * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
-      p.spin = (p.spin || 0) + (a.s.v / 0.31) * (1 / 60);
+      p.spin = (p.spin || 0) + (a.s.v / 0.37) * (1 / 60);
       for (const w of ud.wheels) w.rotation.x = p.spin;
-      // drop old snapshots
       while (buf.length > 2 && buf[1].t < renderT) buf.shift();
     }
   }
@@ -306,7 +428,7 @@ export class Game {
     this.removeGhost(p);
     const g = ghostify(buildBike(p.color));
     const tag = nameSprite(p.name, p.color);
-    tag.position.y = 2.3;
+    tag.position.y = 2.1;
     g.add(tag);
     p.ghost = g;
     p.qa = new THREE.Quaternion();
@@ -317,7 +439,7 @@ export class Game {
   removeGhost(p) {
     if (!p.ghost) return;
     this.scene.remove(p.ghost);
-    p.ghost.traverse((o) => { if (o.material?.map) o.material.map.dispose(); });
+    p.ghost.traverse((o) => { if (o.isSprite) o.material.map.dispose(); });
     disposeModel(p.ghost);
     p.ghost = null;
   }
@@ -334,33 +456,36 @@ export class Game {
     return [...this.players.values()].map(({ id, name, color, wins }) => ({ id, name, color, wins }));
   }
 
-  // ---- messaging helpers ----------------------------------------------------
+  // ---- messaging helpers ------------------------------------------------------
 
-  sendAll(msg) {           // host -> every client, including the host itself
-    this.net.broadcast(msg);
-    this.clientHandle(msg);
-  }
+  sendAll(msg) { this.net.broadcast(msg); this.clientHandle(msg); }
 
-  toHost(msg) {            // any client -> host
+  toHost(msg) {
     if (this.isHost) this.hostHandle(this.selfId, msg);
     else this.net.send(msg);
   }
 
-  // ---- host side --------------------------------------------------------------
+  tell(id, msg) {
+    if (id === this.selfId) this.clientHandle(msg);
+    else this.net.sendTo(id, msg);
+  }
+
+  // ---- host side ----------------------------------------------------------------
 
   hostHandle(from, msg) {
+    const hr = this.hostRace;
     switch (msg.t) {
       case 'hello': {
         const used = new Set([...this.players.values()].map((p) => p.color));
         const color = COLORS.find((c) => !used.has(c)) || COLORS[this.players.size % COLORS.length];
-        const name = String(msg.name || 'Driver').slice(0, 16);
+        const name = String(msg.name || 'Rider').slice(0, 16);
         this.players.set(from, { id: from, name, color, wins: 0 });
-        const hr = this.hostRace;
-        const nearest = this.world.road.nearestAnywhere(this.car.pos.x, this.car.pos.z);
         this.net.sendTo(from, {
           t: 'welcome', you: from, hostId: this.selfId, seed: this.seed,
-          roster: this.rosterList(), spawnS: nearest.s,
-          race: hr && hr.phase !== 'invite' ? { ...hr.pub, participants: hr.participants } : null,
+          roster: this.rosterList(),
+          spawn: { x: this.car.pos.x, z: this.car.pos.z },
+          lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
+          race: hr && hr.phase !== 'lobby' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
         });
         this.sendAll({ t: 'roster', list: this.rosterList() });
         this.sendAll({ t: 'toast', text: `${name} joined the world` });
@@ -372,43 +497,88 @@ export class Game {
         this.pushSnapshot(from, snap);
         break;
       }
-      case 'race_reply': {
-        const r = this.hostRace;
-        if (!r || r.pub.id !== msg.id || r.phase !== 'invite') return;
-        r.replies.set(from, !!msg.accept);
-        this.ui.hostInviteStatus(this.inviteStatus());
-        if ([...this.players.keys()].every((id) => r.replies.has(id))) this.launchRace();
+      case 'spot_join': {
+        const spot = this.world.spots[msg.spot | 0];
+        if (!spot) return;
+        if (hr && hr.phase !== 'lobby') {
+          this.tell(from, { t: 'toast', text: `A race is already running at ${this.world.spots[hr.spot].name}.` });
+          return;
+        }
+        if (hr && hr.spot !== spot.id) {
+          this.tell(from, { t: 'toast', text: `Riders are already gathering at ${this.world.spots[hr.spot].name}.` });
+          return;
+        }
+        if (!hr) {
+          const secs = this.players.size > 1 ? LOBBY_SECONDS : SOLO_LOBBY;
+          this.hostRace = {
+            id: Math.random().toString(36).slice(2, 8), spot: spot.id, phase: 'lobby',
+            members: [from], endsAt: Date.now() + secs * 1000,
+            participants: [], ready: new Set(), progress: new Map(), times: new Map(),
+          };
+          this.hostRace.lobbyTimer = setTimeout(() => this.launchRace(), secs * 1000);
+          const who = this.players.get(from)?.name || 'Someone';
+          if (this.players.size > 1) this.sendAll({ t: 'toast', text: `${who} is ready to race at ${spot.name} — ${secs}s to join!` });
+        } else if (!hr.members.includes(from)) {
+          hr.members.push(from);
+        }
+        this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
+        // everyone's in: no need to wait out the timer
+        if ([...this.players.keys()].every((id) => this.hostRace.members.includes(id))) {
+          clearTimeout(this.hostRace.lobbyTimer);
+          this.hostRace.lobbyTimer = setTimeout(() => this.launchRace(), 1500);
+        }
+        break;
+      }
+      case 'spot_leave': {
+        if (!hr || hr.phase !== 'lobby') return;
+        hr.members = hr.members.filter((id) => id !== from);
+        if (!hr.members.length) this.cancelLobby();
+        else this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
+        break;
+      }
+      case 'lobby_go': {
+        if (hr && hr.phase === 'lobby' && hr.members.includes(from)) this.launchRace();
         break;
       }
       case 'race_ready': {
-        const r = this.hostRace;
-        if (!r || r.pub.id !== msg.id || r.phase !== 'spawn') return;
-        r.ready.add(from);
-        if (r.participants.every((id) => r.ready.has(id) || !this.players.has(id))) this.beginCountdown();
+        if (!hr || hr.id !== msg.id || hr.phase !== 'spawn') return;
+        hr.ready.add(from);
+        if (hr.participants.every((id) => hr.ready.has(id) || !this.players.has(id))) this.beginCountdown();
         break;
       }
       case 'race_cp': {
-        const r = this.hostRace;
-        if (!r || r.pub.id !== msg.id || r.phase !== 'running') return;
-        r.progress.set(from, Math.max(r.progress.get(from) || 0, msg.i | 0));
+        if (!hr || hr.id !== msg.id || hr.phase !== 'running') return;
+        hr.progress.set(from, Math.max(hr.progress.get(from) || 0, msg.i | 0));
         this.broadcastStandings();
         break;
       }
       case 'race_finish': {
-        const r = this.hostRace;
-        if (!r || r.pub.id !== msg.id || r.phase !== 'running' || r.times.has(from)) return;
-        r.times.set(from, Number(msg.time));
-        r.progress.set(from, r.pub.cps.length + 1);
-        if (r.times.size === 1) {
+        if (!hr || hr.id !== msg.id || hr.phase !== 'running' || hr.times.has(from)) return;
+        hr.times.set(from, Number(msg.time));
+        hr.progress.set(from, this.world.spots[hr.spot].checkpoints.length + 1);
+        if (hr.times.size === 1 && hr.participants.length > 1) {
           const p = this.players.get(from);
           this.sendAll({ t: 'toast', text: `${p?.name || 'Someone'} won! ${FINISH_GRACE}s left for everyone else.` });
-          r.graceTimer = setTimeout(() => this.endRace(false), FINISH_GRACE * 1000);
+          hr.graceTimer = setTimeout(() => this.endRace(false), FINISH_GRACE * 1000);
         }
         this.broadcastStandings();
         this.checkRaceDone();
         break;
       }
     }
+  }
+
+  lobbyPub() {
+    const hr = this.hostRace;
+    return { spot: hr.spot, members: hr.members.slice(), secondsLeft: Math.max(0, (hr.endsAt - Date.now()) / 1000) };
+  }
+
+  cancelLobby() {
+    const hr = this.hostRace;
+    if (!hr) return;
+    clearTimeout(hr.lobbyTimer);
+    this.hostRace = null;
+    this.sendAll({ t: 'lobby', lobby: null });
   }
 
   hostLeave(id) {
@@ -420,66 +590,44 @@ export class Game {
       this.sendAll({ t: 'roster', list: this.rosterList() });
       this.sendAll({ t: 'toast', text: `${p.name} left` });
     }
-    const r = this.hostRace;
-    if (!r) return;
-    if (r.phase === 'invite') {
-      if ([...this.players.keys()].every((k) => r.replies.has(k))) this.launchRace();
-    } else if (r.phase === 'spawn') {
-      if (r.participants.every((k) => r.ready.has(k) || !this.players.has(k))) this.beginCountdown();
+    const hr = this.hostRace;
+    if (!hr) return;
+    if (hr.phase === 'lobby') {
+      hr.members = hr.members.filter((m) => m !== id);
+      if (!hr.members.length) this.cancelLobby();
+      else this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
+    } else if (hr.phase === 'spawn') {
+      if (hr.participants.every((k) => hr.ready.has(k) || !this.players.has(k))) this.beginCountdown();
     } else {
       this.broadcastStandings();
       this.checkRaceDone();
     }
   }
 
-  // Host picked start/finish in the race setup panel.
-  createRace({ s0, s1, spacing }) {
-    if (this.hostRace) return;
-    const dir = s1 >= s0 ? 1 : -1;
-    const len = Math.abs(s1 - s0);
-    const cps = [];
-    const count = Math.max(0, Math.round(len / spacing) - 1);
-    for (let i = 1; i <= count; i++) cps.push(s0 + (dir * len * i) / (count + 1));
-    const pub = { id: Math.random().toString(36).slice(2, 8), s0, s1, cps, length: len };
-    this.hostRace = {
-      pub, phase: 'invite', replies: new Map([[this.selfId, true]]),
-      participants: [], ready: new Set(), progress: new Map(), times: new Map(),
-    };
-    this.net.broadcast({ t: 'race_invite', race: pub, host: this.name, seconds: INVITE_SECONDS });
-    this.ui.hostInviteStatus(this.inviteStatus());
-    this.hostRace.inviteTimer = setTimeout(() => this.launchRace(), INVITE_SECONDS * 1000);
-    if (this.players.size === 1) this.launchRace();
-  }
-
-  inviteStatus() {
-    const r = this.hostRace;
-    if (!r) return null;
-    return [...this.players.values()].map((p) => ({ name: p.name, color: p.color, reply: r.replies.has(p.id) ? (r.replies.get(p.id) ? 'yes' : 'no') : 'wait' }));
-  }
-
   launchRace() {
-    const r = this.hostRace;
-    if (!r || r.phase !== 'invite') return;
-    clearTimeout(r.inviteTimer);
-    r.participants = [...this.players.keys()].filter((id) => r.replies.get(id));
-    r.phase = 'spawn';
-    this.ui.hostInviteStatus(null);
-    this.sendAll({ t: 'race_start', race: r.pub, participants: r.participants });
-    r.readyTimer = setTimeout(() => this.beginCountdown(), 8000);
+    const hr = this.hostRace;
+    if (!hr || hr.phase !== 'lobby') return;
+    clearTimeout(hr.lobbyTimer);
+    hr.participants = hr.members.filter((id) => this.players.has(id));
+    if (!hr.participants.length) { this.cancelLobby(); return; }
+    hr.phase = 'spawn';
+    this.sendAll({ t: 'lobby', lobby: null });
+    this.sendAll({ t: 'race_start', race: { id: hr.id, spot: hr.spot }, participants: hr.participants });
+    hr.readyTimer = setTimeout(() => this.beginCountdown(), 8000);
   }
 
   beginCountdown() {
-    const r = this.hostRace;
-    if (!r || r.phase !== 'spawn') return;
-    clearTimeout(r.readyTimer);
-    r.phase = 'running';
-    this.sendAll({ t: 'race_countdown', id: r.pub.id });
+    const hr = this.hostRace;
+    if (!hr || hr.phase !== 'spawn') return;
+    clearTimeout(hr.readyTimer);
+    hr.phase = 'running';
+    this.sendAll({ t: 'race_countdown', id: hr.id });
   }
 
   standings() {
-    const r = this.hostRace;
-    return r.participants.map((id) => ({
-      id, cp: r.progress.get(id) || 0, time: r.times.has(id) ? r.times.get(id) : null, left: !this.players.has(id),
+    const hr = this.hostRace;
+    return hr.participants.map((id) => ({
+      id, cp: hr.progress.get(id) || 0, time: hr.times.has(id) ? hr.times.get(id) : null, left: !this.players.has(id),
     })).sort((a, b) => {
       if (a.time != null && b.time != null) return a.time - b.time;
       if (a.time != null) return -1;
@@ -489,31 +637,31 @@ export class Game {
   }
 
   broadcastStandings() {
-    if (!this.hostRace) return;
-    this.sendAll({ t: 'race_update', id: this.hostRace.pub.id, standings: this.standings() });
+    if (this.hostRace) this.sendAll({ t: 'race_update', id: this.hostRace.id, standings: this.standings() });
   }
 
   checkRaceDone() {
-    const r = this.hostRace;
-    if (!r || r.phase !== 'running') return;
-    const active = r.participants.filter((id) => this.players.has(id));
-    if (active.length === 0 || active.every((id) => r.times.has(id))) this.endRace(false);
+    const hr = this.hostRace;
+    if (!hr || hr.phase !== 'running') return;
+    const active = hr.participants.filter((id) => this.players.has(id));
+    if (active.length === 0 || active.every((id) => hr.times.has(id))) this.endRace(false);
   }
 
   endRace(cancelled) {
-    const r = this.hostRace;
-    if (!r) return;
-    for (const t of ['inviteTimer', 'readyTimer', 'graceTimer']) clearTimeout(r[t]);
-    const standings = r.phase === 'invite' ? [] : this.standings();
-    const winner = !cancelled && standings[0]?.time != null ? standings[0].id : null;
+    const hr = this.hostRace;
+    if (!hr) return;
+    if (hr.phase === 'lobby') { this.cancelLobby(); return; }
+    for (const t of ['lobbyTimer', 'readyTimer', 'graceTimer']) clearTimeout(hr[t]);
+    const standings = this.standings();
+    // a win only counts when someone actually beat somebody else
+    const winner = !cancelled && standings[0]?.time != null && hr.participants.length > 1 ? standings[0].id : null;
     if (winner && this.players.has(winner)) this.players.get(winner).wins++;
     this.hostRace = null;
-    this.ui.hostInviteStatus(null);
-    this.sendAll({ t: 'race_end', id: r.pub.id, standings, winner, cancelled });
+    this.sendAll({ t: 'race_end', id: hr.id, spot: hr.spot, standings, winner, cancelled });
     this.sendAll({ t: 'roster', list: this.rosterList() });
   }
 
-  // ---- client side (runs on guests and on the host) --------------------------
+  // ---- client side (runs on guests and on the host) ---------------------------
 
   clientHandle(msg) {
     switch (msg.t) {
@@ -538,12 +686,15 @@ export class Game {
         this.ui.fatal('The host closed the world.');
         break;
       case 'full':
-        this.ui.fatal('That world is full (6 players max).');
+        this.ui.fatal('That world is full (6 riders max).');
         break;
-      case 'race_invite':
-        if (this.isHost) return;
-        this.ui.invite(msg, (accept) => this.toHost({ t: 'race_reply', id: msg.race.id, accept }));
+      case 'lobby': {
+        const l = msg.lobby;
+        this.lobby = l ? { ...l, spotObj: this.world.spots[l.spot], endsAt: performance.now() + l.secondsLeft * 1000 } : null;
+        const member = !!l && l.members.includes(this.selfId);
+        this.ui.lobby(this.lobby, member, this.lobby && this.lobby.members.map((id) => this.players.get(id)?.name || '…'), () => this.toHost({ t: 'lobby_go' }));
         break;
+      }
       case 'race_start':
         this.startRaceLocal(msg.race, msg.participants, msg.late);
         break;
@@ -570,25 +721,26 @@ export class Game {
   }
 
   startRaceLocal(pub, participants, late) {
-    this.ui.closeInvite();
+    this.ui.closeSpotPrompt();
+    const spot = this.world.spots[pub.spot];
     const participant = !late && participants.includes(this.selfId);
-    const dir = pub.s1 >= pub.s0 ? 1 : -1;
     this.race = {
-      ...pub, dir, participant, phase: participant ? 'spawn' : 'spectate',
-      next: 0, // index into cps; cps.length means the finish is next
-      startTime: 0, finished: false, standings: participants.map((id) => ({ id, cp: 0, time: null })),
+      id: pub.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
+      next: 0, startTime: 0, finished: false,
+      standings: participants.map((id) => ({ id, cp: 0, time: null })),
     };
     this.markers?.dispose();
-    this.markers = new RaceMarkers(this.scene, this.world, pub);
+    this.markers = participant ? new RaceMarkers(this.scene, spot, this.world.net.edges[spot.steps[0][0]].half > DIRT_HALF ? PAVED_HALF : DIRT_HALF + 1) : null;
     if (participant) {
+      this.nav = null;
       this.markers.setTarget(1);
-      this.placeOnRoad(pub.s0 - dir * 6, dir);
+      const p = spot.route.at(spot.startS);
+      this.placeAt(p, Math.atan2(p.tx, p.tz));
       this.car.frozen = true;
-      this.ui.toast(`Race! ${(pub.length / 1000).toFixed(1)} km — get ready`);
-      // give the renderer a frame to build the start area, then report ready
+      this.ui.toast(`${spot.name} · ${(spot.length / 1000).toFixed(1)} km — get ready`);
       setTimeout(() => this.toHost({ t: 'race_ready', id: pub.id }), 600);
     } else {
-      this.ui.toast('A race is in progress — you are spectating.');
+      this.ui.toast(`A race is running at ${spot.name}.`);
     }
     this.ui.raceStandings(this.namedStandings(this.race.standings), this.race);
   }
@@ -615,36 +767,38 @@ export class Game {
   updateRace(now) {
     const r = this.race;
     if (!r.participant || r.phase !== 'running' || r.finished) return;
-    const target = r.next < r.cps.length ? this.world.road.at(r.cps[r.next]) : this.world.road.at(r.s1);
+    const cps = r.spot.checkpoints;
+    const target = r.next < cps.length ? r.spot.route.at(cps[r.next]) : r.spot.route.at(r.spot.route.length - 1);
     const d = Math.hypot(target.x - this.car.pos.x, target.z - this.car.pos.z);
     r.elapsed = (now - r.startTime) / 1000;
     r.distToNext = d;
-    if (d < CP_RADIUS) {
-      if (r.next < r.cps.length) {
-        r.next++;
-        this.markers.setTarget(r.next + 1);
-        this.ui.flash(`Checkpoint ${r.next}/${r.cps.length}`);
-        this.toHost({ t: 'race_cp', id: r.id, i: r.next });
-      } else {
-        r.finished = true;
-        r.finishTime = r.elapsed;
-        this.markers.setTarget(-1);
-        this.ui.flash(`Finished · ${fmtTime(r.elapsed)}`);
-        this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
-      }
+    if (d >= CP_RADIUS) return;
+    if (r.next < cps.length) {
+      r.next++;
+      this.markers.setTarget(r.next + 1);
+      this.ui.flash(`Checkpoint ${r.next}/${cps.length}`);
+      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
+    } else {
+      r.finished = true;
+      r.finishTime = r.elapsed;
+      this.markers.setTarget(-1);
+      this.ui.flash(`Finished · ${fmtTime(r.elapsed)}`);
+      const best = this.bestTimes[r.spot.id];
+      if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
+      this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
     }
   }
 
   endRaceLocal(msg) {
-    this.ui.closeInvite();
-    const r = this.race;
     if (this.markers) { this.markers.dispose(); this.markers = null; }
+    const r = this.race;
     this.race = null;
     this.car.frozen = false;
     this.ui.countdown(null);
     this.ui.raceStandings(null);
-    if (msg.cancelled) this.ui.toast('The host ended the race.');
-    else if (msg.standings.length) this.ui.results(this.namedStandings(msg.standings), msg.winner === this.selfId);
+    if (!r || !r.participant) return;
+    if (msg.cancelled) this.ui.toast('The race was called off.');
+    else if (msg.standings.length) this.ui.results(this.world.spots[msg.spot], this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
   }
 }
 
@@ -674,7 +828,7 @@ function nameSprite(name, color) {
   c.fillText(name, 128 + 8, 33);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false }));
   s.scale.set(4, 1, 1);
   s.renderOrder = 10;
   return s;

@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TerrainGen, CHUNK, TREE_PINE, TREE_BROAD, TREE_BUSH } from './terrainGen.js';
-import { ROAD_HALF_WIDTH as W, ROAD_STEP } from './road.js';
-import { patch, textures } from './materials.js';
+import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from './terrainGen.js';
+import { KIND_DIRT, ROAD_STEP } from './network.js';
+import { DIFFICULTY } from './spots.js';
+import { patch, textures, raw } from './materials.js';
 import { GrassField } from './grass.js';
 import TerrainWorker from './terrain.worker.js?worker';
 
 const VIEW = 7.5;          // view radius in chunks (~1.9 km)
-const ROAD_PIECE = 64;     // dense samples per road mesh
+const ROAD_PIECE = 64;     // samples per road mesh
 const MAX_IN_FLIGHT = 2;
+const MAP_SIZE = 1024;
 
-// detail by distance (in chunks) from the player
 function segFor(d) {
   if (d < 1.25) return 128;
   if (d < 2.4) return 64;
@@ -23,7 +24,8 @@ export class World {
     this.scene = scene;
     this.seed = seed;
     this.gen = new TerrainGen(seed);
-    this.road = this.gen.road;
+    this.net = this.gen.net;
+    this.spots = this.gen.spots;
     this.group = new THREE.Group();
     scene.add(this.group);
 
@@ -33,51 +35,50 @@ export class World {
     this.treeGeos = makeTreeGeometries();
     this.indexCache = new Map();
 
-    this.chunks = new Map();   // key -> { seg, group }
-    this.pending = new Map();  // key -> seg requested
+    this.chunks = new Map();
+    this.pending = new Map();
     this.roadPieces = new Map();
+    this.discs = new Map();
 
     this.worker = new TerrainWorker();
     this.worker.onerror = (e) => console.error('terrain worker failed', e.message || e);
     this.worker.postMessage({ type: 'init', seed });
-    this.worker.onmessage = (e) => this.onChunk(e.data);
+    this.worker.onmessage = (e) => (e.data.type === 'map' ? this.onMap(e.data) : this.onChunk(e.data));
+    this.mapCanvas = null;
+    this.mapListeners = [];
+    this.mapRequested = false;
+
+    this.water = makeWater();
+    scene.add(this.water);
+    this.beacons = makeSpotBeacons(this.spots);
+    scene.add(this.beacons);
 
     this.grass = new GrassField(scene, this.gen);
     this.focus = new THREE.Vector3();
   }
 
-  // ---- queries used by physics / gameplay ---------------------------------
+  // ---- queries --------------------------------------------------------------
 
   heightAt(x, z) { return this.gen.heightAt(x, z); }
   normalAt(x, z, out = new THREE.Vector3()) { return this.gen.normalAt(x, z, out); }
-  isOnRoad(x, z) {
-    const n = this.road.nearest(x, z, W + 1);
-    return !!n && n.dist < W + 0.4;
-  }
-
-  // true once the chunk under a point has a mesh (used by the loading screen)
-  readyAt(x, z) {
-    return this.chunks.has(Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK));
-  }
-
-  preload(x, z) {
-    this.road.ensureAround(z);
-    this.focus.set(x, 0, z);
-  }
+  surfaceAt(x, z) { return this.gen.surfaceAt(x, z); }
+  readyAt(x, z) { return this.chunks.has(Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK)); }
 
   // ---- streaming ------------------------------------------------------------
 
   update(focus) {
     this.focus.copy(focus);
-    this.road.ensureAround(focus.z);
     const pcx = focus.x / CHUNK - 0.5, pcz = focus.z / CHUNK - 0.5;
     const cx0 = Math.floor(focus.x / CHUNK), cz0 = Math.floor(focus.z / CHUNK);
     const R = Math.ceil(VIEW);
     const wanted = new Map();
     const todo = [];
+    const lim = MAP_EXTENT + CHUNK;
     for (let dz = -R; dz <= R; dz++) {
       for (let dx = -R; dx <= R; dx++) {
         const cx = cx0 + dx, cz = cz0 + dz;
+        // open sea beyond the map: the water plane covers it
+        if (Math.abs((cx + 0.5) * CHUNK) > lim || Math.abs((cz + 0.5) * CHUNK) > lim) continue;
         const d = Math.hypot(cx - pcx, cz - pcz);
         if (d > VIEW) continue;
         const key = cx + ',' + cz;
@@ -93,12 +94,23 @@ export class World {
       this.pending.set(key, seg);
       this.worker.postMessage({ type: 'chunk', key, cx, cz, seg });
     }
+    // the map image waits until the nearby terrain is in
+    if (!this.mapRequested && todo.length === 0 && this.pending.size === 0) {
+      this.mapRequested = true;
+      this.worker.postMessage({ type: 'map', size: MAP_SIZE });
+    }
     for (const [key, c] of this.chunks) {
       if (!wanted.has(key)) { this.disposeChunk(c); this.chunks.delete(key); }
     }
     this.wanted = wanted;
-    this.updateRoad(focus);
+    this.updateRoads(focus);
     this.grass.update(focus);
+    this.water.position.set(Math.round(focus.x / 100) * 100, 0, Math.round(focus.z / 100) * 100);
+    for (const b of this.beacons.children) {
+      const d = Math.hypot(b.position.x - focus.x, b.position.z - focus.z);
+      b.visible = d < 2600;
+      if (b.userData.label) b.userData.label.visible = d < 350;
+    }
   }
 
   onChunk(m) {
@@ -106,21 +118,33 @@ export class World {
     if (!this.wanted || this.wanted.get(m.key) !== m.seg) return;
     const old = this.chunks.get(m.key);
     const group = new THREE.Group();
-
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(m.pos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(m.nor, 3));
     g.setAttribute('aRoad', new THREE.BufferAttribute(m.road, 1));
+    g.setAttribute('aLine', new THREE.BufferAttribute(m.kind, 1));
     g.setIndex(this.indexFor(m.seg));
     g.computeBoundingSphere();
     const mesh = new THREE.Mesh(g, this.terrainMat);
     mesh.receiveShadow = true;
     group.add(mesh);
-
     this.addTrees(group, m.trees, m.seg >= 64);
     this.group.add(group);
     if (old) this.disposeChunk(old);
     this.chunks.set(m.key, { seg: m.seg, group });
+  }
+
+  onMap(m) {
+    const c = document.createElement('canvas');
+    c.width = c.height = m.size;
+    c.getContext('2d').putImageData(new ImageData(m.px, m.size, m.size), 0, 0);
+    this.mapCanvas = c;
+    for (const fn of this.mapListeners) fn(c);
+  }
+
+  onMapReady(fn) {
+    if (this.mapCanvas) fn(this.mapCanvas);
+    else this.mapListeners.push(fn);
   }
 
   disposeChunk(c) {
@@ -142,7 +166,6 @@ export class World {
         out.push(a, b, c, c, b, d);
       }
     }
-    // skirts, both windings so they are visible from either side
     const base = N * N;
     for (let e = 0; e < 4; e++) {
       for (let k = 0; k < N - 1; k++) {
@@ -164,8 +187,7 @@ export class World {
     [TREE_PINE, TREE_BROAD, TREE_BUSH].forEach((type) => {
       const list = byType[type];
       if (!list.length) return;
-      const geo = this.treeGeos[type][near ? 0 : 1];
-      const im = new THREE.InstancedMesh(geo, this.treeMat, list.length);
+      const im = new THREE.InstancedMesh(this.treeGeos[type][near ? 0 : 1], this.treeMat, list.length);
       list.forEach((i, n) => {
         p.set(data[i], data[i + 1], data[i + 2]);
         q.setFromAxisAngle(up, data[i + 4]);
@@ -180,62 +202,78 @@ export class World {
     });
   }
 
-  updateRoad(focus) {
-    const r = this.road;
-    const p0 = Math.floor(r.minK / ROAD_PIECE), p1 = Math.floor((r.maxK - 1) / ROAD_PIECE);
+  // ---- roads ----------------------------------------------------------------
+
+  updateRoads(focus) {
     const R2 = (VIEW * CHUNK) ** 2;
-    for (let p = p0; p <= p1; p++) {
-      const kMid = Math.min(Math.max(p * ROAD_PIECE + ROAD_PIECE / 2, r.minK), r.maxK);
-      const d = r.dense(kMid);
-      const near = (d.x - focus.x) ** 2 + (d.z - focus.z) ** 2 < R2;
-      const has = this.roadPieces.has(p);
+    const net = this.net;
+    for (const e of net.edges) {
+      const [x0, z0, x1, z1] = e.box;
+      const dx = Math.max(x0 - focus.x, 0, focus.x - x1), dz = Math.max(z0 - focus.z, 0, focus.z - z1);
+      const edgeNear = dx * dx + dz * dz < R2;
+      const pieces = Math.ceil((e.n - 1) / ROAD_PIECE);
+      for (let p = 0; p < pieces; p++) {
+        const key = e.id + ':' + p;
+        let near = false;
+        if (edgeNear) {
+          const mid = Math.min(e.n - 1, p * ROAD_PIECE + ROAD_PIECE / 2);
+          near = (e.x[mid] - focus.x) ** 2 + (e.z[mid] - focus.z) ** 2 < R2;
+        }
+        const has = this.roadPieces.has(key);
+        if (near && !has) {
+          const mesh = this.buildRoadPiece(e, p * ROAD_PIECE, Math.min(e.n - 1, (p + 1) * ROAD_PIECE));
+          this.roadPieces.set(key, mesh);
+          if (mesh) this.group.add(mesh);
+        } else if (!near && has) {
+          const m = this.roadPieces.get(key);
+          if (m) { this.group.remove(m); m.geometry.dispose(); }
+          this.roadPieces.delete(key);
+        }
+      }
+    }
+    for (const n of net.nodes) {
+      const near = (n.x - focus.x) ** 2 + (n.z - focus.z) ** 2 < R2;
+      const has = this.discs.has(n.id);
       if (near && !has) {
-        const k0 = Math.max(p * ROAD_PIECE, r.minK), k1 = Math.min(p * ROAD_PIECE + ROAD_PIECE, r.maxK);
-        if (k1 - k0 < 2) continue;
-        const mesh = this.buildRoadPiece(k0, k1);
-        this.roadPieces.set(p, mesh);
-        this.group.add(mesh);
+        const m = this.buildDisc(n);
+        this.discs.set(n.id, m);
+        this.group.add(m);
       } else if (!near && has) {
-        const m = this.roadPieces.get(p);
+        const m = this.discs.get(n.id);
         this.group.remove(m);
         m.geometry.dispose();
-        this.roadPieces.delete(p);
+        this.discs.delete(n.id);
       }
     }
   }
 
-  // No-overtaking double line where the road bends, dashed where it's straight.
-  lineStyle(k) {
-    const r = this.road;
-    const a = r.dense(Math.max(r.minK, k - 20)), b = r.dense(Math.min(r.maxK, k + 20));
-    const turn = Math.acos(Math.min(1, a.tx * b.tx + a.tz * b.tz));
+  // double line where the road bends, dashed where it's straight
+  lineStyle(e, i) {
+    if (e.kind === KIND_DIRT) return 2;
+    const a = Math.max(0, i - 20), b = Math.min(e.n - 1, i + 20);
+    const turn = Math.acos(Math.min(1, e.tx[a] * e.tx[b] + e.tz[a] * e.tz[b]));
     return turn > 0.32 ? 1 : 0;
   }
 
-  buildRoadPiece(k0, k1) {
-    const r = this.road;
-    const n = k1 - k0 + 1;
-    const pos = new Float32Array(n * 2 * 3);
-    const nor = new Float32Array(n * 2 * 3);
-    const uv = new Float32Array(n * 2 * 2);
-    const line = new Float32Array(n * 2);
-    const zero = new Float32Array(n * 2);
+  buildRoadPiece(e, k0, k1) {
+    // trim the ends under the junction pads
+    const nA = this.net.nodes[e.a], nB = this.net.nodes[e.b];
+    const lo = Math.ceil((nA.disc - 1.2) / ROAD_STEP), hi = e.n - 1 - Math.ceil((nB.disc - 1.2) / ROAD_STEP);
+    k0 = Math.max(k0, lo); k1 = Math.min(k1, hi);
+    if (k1 - k0 < 1) return null;
+    const n = k1 - k0 + 1, W = e.half;
+    const pos = new Float32Array(n * 6), nor = new Float32Array(n * 6), uv = new Float32Array(n * 4);
+    const line = new Float32Array(n * 2), zero = new Float32Array(n * 2);
     const idx = [];
-    // smooth the line style along the piece so it doesn't flicker
-    const styles = [];
-    for (let i = 0; i < n; i++) styles.push(this.lineStyle(k0 + i));
-    for (let i = 0; i < n; i++) {
-      const d = r.dense(k0 + i);
-      const nx = -d.tz, nz = d.tx;
-      const y = d.y + 0.03;
-      pos.set([d.x + nx * W, y, d.z + nz * W, d.x - nx * W, y, d.z - nz * W], i * 6);
-      nor.set([0, 1, 0, 0, 1, 0], i * 6);
-      uv.set([0, d.s, 1, d.s], i * 4);
-      line[i * 2] = line[i * 2 + 1] = styles[i];
-      if (i < n - 1) {
-        const a = i * 2;
-        idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-      }
+    for (let j = 0; j < n; j++) {
+      const i = k0 + j;
+      const nx = -e.tz[i], nz = e.tx[i];
+      const y = e.y[i] + 0.03;
+      pos.set([e.x[i] + nx * W, y, e.z[i] + nz * W, e.x[i] - nx * W, y, e.z[i] - nz * W], j * 6);
+      nor.set([0, 1, 0, 0, 1, 0], j * 6);
+      uv.set([0, i * ROAD_STEP, 1, i * ROAD_STEP], j * 4);
+      line[j * 2] = line[j * 2 + 1] = this.lineStyle(e, i);
+      if (j < n - 1) { const a = j * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -250,13 +288,27 @@ export class World {
     return m;
   }
 
+  buildDisc(n) {
+    const g = new THREE.CircleGeometry(n.disc, 32).rotateX(-Math.PI / 2).translate(n.x, n.y + 0.06, n.z);
+    const count = g.attributes.position.count;
+    g.setAttribute('aLine', new THREE.BufferAttribute(new Float32Array(count).fill(n.kind === KIND_DIRT ? 2 : 3), 1));
+    g.setAttribute('aRoad', new THREE.BufferAttribute(new Float32Array(count), 1));
+    const m = new THREE.Mesh(g, this.roadMat);
+    m.receiveShadow = true;
+    return m;
+  }
+
   dispose() {
     this.worker.terminate();
-    this.scene.remove(this.group);
+    this.scene.remove(this.group, this.water, this.beacons);
     for (const c of this.chunks.values()) this.disposeChunk(c);
-    for (const m of this.roadPieces.values()) m.geometry.dispose();
+    for (const m of this.roadPieces.values()) m?.geometry.dispose();
+    for (const m of this.discs.values()) m.geometry.dispose();
     this.treeGeos.flat().forEach((g) => g.dispose());
     this.grass.dispose();
+    this.water.geometry.dispose();
+    this.water.material.dispose();
+    this.beacons.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
     [this.terrainMat, this.roadMat, this.treeMat].forEach((m) => m.dispose());
   }
 }
@@ -270,13 +322,75 @@ function edgeVertex(e, k, N) {
   return k * N + N - 1;
 }
 
+// ---- water ------------------------------------------------------------------
+
+function makeWater() {
+  const mat = patch(new THREE.MeshStandardMaterial({
+    color: 0x1f5d66, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.86, envMapIntensity: 0.9,
+  }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), mat);
+  m.position.y = 0;
+  m.renderOrder = 1;
+  m.userData.isWater = true;
+  return m;
+}
+
+// ---- race spot beacons ------------------------------------------------------------
+
+function makeSpotBeacons(spots) {
+  const group = new THREE.Group();
+  for (const s of spots) {
+    const p = s.route.at(s.startS);
+    const color = new THREE.Color(DIFFICULTY[s.difficulty].color);
+    const b = new THREE.Group();
+    b.position.set(p.x, p.y, p.z);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(10, 0.18, 8, 64).rotateX(Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+    );
+    ring.position.y = 0.25;
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.6, 1.6, 160, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    beam.position.y = 80;
+    const label = spotLabel(s);
+    label.position.y = 7;
+    b.add(ring, beam, label);
+    b.userData = { spot: s.id, label };
+    group.add(b);
+  }
+  return group;
+}
+
+function spotLabel(s) {
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 160;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(12,14,18,0.72)';
+  c.beginPath(); c.roundRect(16, 16, 480, 128, 24); c.fill();
+  c.fillStyle = DIFFICULTY[s.difficulty].color;
+  c.fillRect(16, 16, 10, 128);
+  c.fillStyle = '#fff';
+  c.font = '700 44px system-ui, sans-serif';
+  c.fillText(s.name, 48, 72);
+  c.font = '500 30px system-ui, sans-serif';
+  c.fillStyle = 'rgba(255,255,255,0.8)';
+  c.fillText(`${(s.length / 1000).toFixed(1)} km · ${'★'.repeat(s.difficulty)}${'☆'.repeat(5 - s.difficulty)} ${DIFFICULTY[s.difficulty].label}`, 48, 120);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));
+  sp.scale.set(12, 3.75, 1);
+  sp.renderOrder = 20;
+  return sp;
+}
+
 // ---- tree models (original low-poly designs, vertex coloured) ---------------
 
 function colored(geo, hex, jitter = 0, shade = 0) {
   geo = geo.index ? geo.toNonIndexed() : geo;
   const pos = geo.attributes.position;
   if (jitter) {
-    // deterministic per-vertex wobble keyed on position so shared corners move together
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
       const h = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
@@ -290,7 +404,6 @@ function colored(geo, hex, jitter = 0, shade = 0) {
   const { min, max } = geo.boundingBox;
   const span = Math.max(1e-3, max.y - min.y);
   for (let i = 0; i < pos.count; i++) {
-    // darker toward the underside of each part, like self-shadowed foliage
     const k = 1 - shade * (1 - (pos.getY(i) - min.y) / span);
     arr.set([c.r * k, c.g * k, c.b * k], i * 3);
   }
@@ -302,21 +415,17 @@ function colored(geo, hex, jitter = 0, shade = 0) {
 
 function makeTreeGeometries() {
   const trunk = (h, r0, r1) => colored(new THREE.CylinderGeometry(r1, r0, h, 6).translate(0, h / 2, 0), 0x3b2a1c);
-
-  // Tall dark conifer: stacked drooping tiers.
   const pineTiers = [];
   const tiers = 7;
   for (let t = 0; t < tiers; t++) {
     const f = t / (tiers - 1);
     const rad = 3.0 * (1 - f) + 0.55;
-    const y = 4.8 + t * 1.6; // lowest boughs clear the riding camera
+    const y = 4.8 + t * 1.6;
     const shade = [0x1e3420, 0x23392a, 0x1b2f1e][t % 3];
     pineTiers.push(colored(new THREE.ConeGeometry(rad, 3.2, 9, 2).translate(0, y, 0), shade, 0.28, 0.35));
   }
   const pineNear = mergeGeometries([trunk(6, 0.32, 0.18), ...pineTiers]);
   const pineFar = mergeGeometries([colored(new THREE.ConeGeometry(2.9, 12, 6).translate(0, 9.4, 0), 0x1d3220), trunk(3.6, 0.3, 0.25)]);
-
-  // Broadleaf: lumpy canopy of jittered blobs.
   const blobs = [
     [0, 7.2, 0, 2.9], [1.9, 6.4, 0.6, 2.2], [-1.8, 6.6, -0.4, 2.3], [0.4, 8.6, -1.2, 2.0],
     [-0.6, 6.0, 1.9, 2.0], [0.8, 6.1, -2.0, 1.9], [-0.2, 9.4, 0.7, 1.6],
@@ -332,14 +441,13 @@ function makeTreeGeometries() {
     trunk(5, 0.45, 0.3),
     colored(new THREE.IcosahedronGeometry(3.4, 0).scale(1, 0.85, 1).translate(0, 7.4, 0), 0x34501f),
   ]);
-
-  // Low heather / scrub clump.
   const bushNear = mergeGeometries([
     colored(new THREE.IcosahedronGeometry(1.1, 1).scale(1.3, 0.6, 1).translate(0, 0.35, 0), 0x3a2f20, 0.35),
     colored(new THREE.IcosahedronGeometry(0.8, 1).scale(1.2, 0.7, 1).translate(0.9, 0.3, 0.4), 0x463824, 0.35),
     colored(new THREE.IcosahedronGeometry(0.7, 1).scale(1.2, 0.6, 1).translate(-0.8, 0.25, -0.3), 0x2f3a1e, 0.35),
   ]);
   const bushFar = colored(new THREE.IcosahedronGeometry(1.2, 0).scale(1.5, 0.6, 1.1).translate(0, 0.3, 0), 0x3a3020);
-
   return [[pineNear, pineFar], [broadNear, broadFar], [bushNear, bushFar]];
 }
+
+export { raw };

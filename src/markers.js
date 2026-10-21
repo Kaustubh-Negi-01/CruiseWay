@@ -1,37 +1,36 @@
 import * as THREE from 'three';
-import { ROAD_HALF_WIDTH as W } from './world/road.js';
 
-// Start gate, checkpoint gates and finish gate, plus a tall light beacon on
-// whichever gate the local player must reach next (visible through fog, so
-// players can navigate off-road toward it).
+// Start gate, checkpoint gates and finish gate along a spot's route, plus a
+// tall light beacon on whichever gate the local rider must reach next
+// (visible through haze, so you can navigate off-road toward it).
 export class RaceMarkers {
-  constructor(scene, world, race) {
+  constructor(scene, spot, halfWidth = 5) {
     this.scene = scene;
     this.group = new THREE.Group();
     scene.add(this.group);
     this.gates = [];
-    const road = world.road;
-    const pts = [race.s0, ...race.cps, race.s1];
+    const pts = [spot.startS, ...spot.checkpoints, spot.route.length - 1];
     pts.forEach((s, i) => {
       const kind = i === 0 ? 'start' : i === pts.length - 1 ? 'finish' : 'cp';
-      const p = road.at(s);
-      const gate = makeGate(kind, i);
+      const p = spot.route.at(s);
+      const gate = makeGate(kind, i, halfWidth);
       gate.position.set(p.x, p.y, p.z);
       gate.rotation.y = Math.atan2(p.tx, p.tz);
       this.group.add(gate);
       this.gates.push({ gate, x: p.x, y: p.y, z: p.z, kind });
     });
-
-    const beaconMat = new THREE.MeshBasicMaterial({
-      color: 0xffd23f, transparent: true, opacity: 0.35, fog: false,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    });
-    this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 400, 12, 1, true), beaconMat);
+    this.beacon = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.2, 400, 12, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd23f, transparent: true, opacity: 0.35, fog: false, toneMapped: false,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      }),
+    );
     this.beacon.visible = false;
     this.group.add(this.beacon);
   }
 
-  // index into [start, ...cps, finish] of the gate the player is heading for
+  // index into [start, ...checkpoints, finish] of the gate to reach next
   setTarget(i) {
     const g = this.gates[i];
     if (!g) { this.beacon.visible = false; return; }
@@ -39,7 +38,7 @@ export class RaceMarkers {
     this.beacon.position.set(g.x, g.y + 200, g.z);
     this.beacon.material.color.set(g.kind === 'finish' ? 0x6cff8a : 0xffd23f);
     this.gates.forEach((gg, j) => {
-      gg.gate.traverse((o) => { if (o.material && o.userData.banner) o.material.opacity = j === i ? 1 : j < i ? 0.25 : 0.6; });
+      gg.gate.traverse((o) => { if (o.userData.banner) o.material.opacity = j === i ? 1 : j < i ? 0.25 : 0.6; });
     });
   }
 
@@ -56,20 +55,19 @@ export class RaceMarkers {
   }
 }
 
-function makeGate(kind, n) {
+function makeGate(kind, n, half) {
   const g = new THREE.Group();
   const color = kind === 'finish' ? 0x111111 : kind === 'start' ? 0x2a7de1 : 0xf2a30f;
   const postMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
-  for (const x of [-(W + 1.2), W + 1.2]) {
+  for (const x of [-(half + 1.4), half + 1.4]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 6, 8), postMat);
     post.position.set(x, 3, 0);
     post.castShadow = true;
     g.add(post);
   }
   const label = kind === 'finish' ? 'FINISH' : kind === 'start' ? 'START' : `CHECKPOINT ${n}`;
-  const tex = bannerTexture(label, kind, color);
-  const bannerMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
-  const banner = new THREE.Mesh(new THREE.PlaneGeometry(2 * W + 2.4, 1.4), bannerMat);
+  const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTexture(label, kind, color), transparent: true, side: THREE.DoubleSide });
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(2 * half + 2.8, 1.4), bannerMat);
   banner.position.set(0, 5.6, 0);
   banner.userData.banner = true;
   g.add(banner);

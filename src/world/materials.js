@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROAD_HALF_WIDTH } from './road.js';
+import { PAVED_HALF } from './network.js';
 
 // Shared look: procedural textures, and shader patches that add
 //  - sun-tinted atmospheric haze (replaces three's fog),
@@ -281,8 +281,15 @@ const TERRAIN_FRAG = /* glsl */`
     float patches = smoothstep(0.66, 0.78, mid.b) * 0.8 + smoothstep(0.7, 0.8, small.a) * 0.5;
     float dirtAmt = clamp(smoothstep(0.26, 0.48, slope) + patches * (1.0 - slope * 0.5), 0.0, 1.0);
     vec3 col = mix(grass, dirt, dirtAmt);
-    float shoulder = 1.0 - smoothstep(${(ROAD_HALF_WIDTH + 0.3).toFixed(2)}, ${(ROAD_HALF_WIDTH + 1.9).toFixed(2)}, vRoad + small.r * 0.8);
-    col = mix(col, gravel, shoulder);
+    // vRoad = distance past the road edge, vLine = road kind (1 paved, 2 dirt)
+    float shoulder = 1.0 - smoothstep(0.2, 1.9, vRoad + small.r * 0.8);
+    vec3 edgeCol = vLine > 1.5 ? vec3(0.2, 0.145, 0.09) * dd : gravel;
+    col = mix(col, edgeCol, shoulder);
+    // beaches and lake shores
+    float sand = 1.0 - smoothstep(1.2, 3.6, vWPos.y + small.g * 1.5);
+    vec3 sandCol = vec3(0.52, 0.44, 0.3) * (0.85 + dd * 0.15);
+    col = mix(col, sandCol, sand * (1.0 - shoulder));
+    col *= 1.0 - smoothstep(0.0, -3.0, vWPos.y) * 0.45; // darker underwater
     diffuseColor.rgb = col;
   }`;
 
@@ -298,15 +305,27 @@ const ROAD_FRAG = /* glsl */`
     float track = exp(-pow((abs(u - 0.5) - 0.24) / 0.06, 2.0));
     asphalt *= 1.0 - track * 0.12;
     float aa = fwidth(u) * 1.2;
-    float W = ${(ROAD_HALF_WIDTH * 2).toFixed(2)};
+    float W = ${(PAVED_HALF * 2).toFixed(2)};
     float lineW = 0.13 / W;
     float edge = smoothstep(lineW + aa, lineW - aa, abs(u - 0.035)) + smoothstep(lineW + aa, lineW - aa, abs(u - 0.965));
     float dash = step(fract(v / 12.0), 0.42);
     float single = smoothstep(lineW * 0.6 + aa, lineW * 0.6 - aa, abs(u - 0.5)) * dash;
     float dbl = smoothstep(lineW * 0.5 + aa, lineW * 0.5 - aa, abs(abs(u - 0.5) - 0.016));
     float center = mix(single, dbl, step(0.5, vLine));
-    markMask = clamp(edge + center, 0.0, 1.0) * (0.75 + n2 * 0.25);
+    float paved = 1.0 - step(1.5, vLine);          // 0,1 = marked road; 2 = dirt; 3 = junction
+    markMask = clamp(edge + center, 0.0, 1.0) * (0.75 + n2 * 0.25) * paved;
     diffuseColor.rgb = mix(asphalt, vec3(0.78, 0.77, 0.72), markMask);
+    if (vLine > 1.5 && vLine < 2.5) {
+      // packed dirt with two darker wheel ruts and a grassy crown
+      float grain = texture2D(uDirtTex, w / 2.2).r;
+      vec3 dirtCol = vec3(0.23, 0.165, 0.1) * (0.7 + n1 * 0.5) * (0.75 + grain * 0.5);
+      float ruts = exp(-pow((abs(u - 0.5) - 0.2) / 0.07, 2.0));
+      dirtCol *= 1.0 - ruts * 0.25;
+      float crown = exp(-pow((u - 0.5) / 0.05, 2.0)) * smoothstep(0.45, 0.7, texture2D(uNoise, w / 14.0).g);
+      dirtCol = mix(dirtCol, vec3(0.16, 0.19, 0.06) * (0.7 + grain * 0.6), crown * 0.8);
+      float lip = smoothstep(0.38, 0.5, abs(u - 0.5));
+      diffuseColor.rgb = mix(dirtCol, dirtCol * 0.82, lip);
+    }
   }`;
 
 const ROAD_ROUGH = /* glsl */`

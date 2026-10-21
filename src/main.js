@@ -1,5 +1,5 @@
 import { Game } from './game.js';
-import { UI, chips } from './ui.js';
+import { UI } from './ui.js';
 import { Input } from './input.js';
 import { Net, normalizeCode } from './net.js';
 import { MapView } from './map.js';
@@ -99,7 +99,7 @@ function enterGame({ net, seed, code, welcome }) {
   ui.setWorldCode(code);
   game.start({ net, seed, name: playerName(), welcome });
   ui.attachWorld(game.world);
-  ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true });
+  setupBigMap();
   input.attachTouch($('#hud'));
   if (net.isHost) {
     $('#hostTools').classList.remove('hidden');
@@ -121,8 +121,8 @@ $('#worldChip').onclick = async () => {
   }
 };
 
-const overlays = ['#pause', '#mapOverlay', '#raceSetup'];
-const closeOverlays = () => overlays.forEach((s) => $(s).classList.add('hidden'));
+const overlays = ['#pause', '#mapOverlay'];
+const closeOverlays = () => { overlays.forEach((s) => $(s).classList.add('hidden')); ui.showSpotCard(null); };
 
 input.on('escape', () => {
   if (!game.running) return;
@@ -130,86 +130,49 @@ input.on('escape', () => {
   closeOverlays();
   if (!anyOpen) $('#pause').classList.remove('hidden');
 });
+
+// ---------------------------------------------------------------- map
+function sizeBigMap() {
+  const cv = $('#bigMap');
+  const dpr = Math.min(devicePixelRatio, 2);
+  cv.width = Math.round(innerWidth * dpr);
+  cv.height = Math.round(innerHeight * dpr);
+}
+addEventListener('resize', () => { if (ui.bigMap) sizeBigMap(); });
+
 input.on('map', () => {
   if (!game.running) return;
   const m = $('#mapOverlay');
   const open = m.classList.contains('hidden');
   closeOverlays();
-  if (open) { m.classList.remove('hidden'); ui.bigMap.follow = true; ui.bigMap.scale = 0.12; }
+  if (!open) return;
+  m.classList.remove('hidden');
+  sizeBigMap();
+  ui.bigMap.fitIsland();
 });
+$('#clearRoute').onclick = () => { game.clearWaypoint(); ui.toast('Route cleared.'); };
+$('#centerMe').onclick = () => { ui.bigMap.follow = true; ui.bigMap.scale = Math.max(ui.bigMap.scale, 0.35); };
 $('#resumeBtn').onclick = closeOverlays;
 $('#leaveBtn').onclick = () => { game.stop(); location.href = location.pathname; };
-$('#mapOverlay').addEventListener('pointerdown', (e) => { if (e.target.id === 'mapOverlay') closeOverlays(); });
 
-// ---------------------------------------------------------------- race setup (host)
-
-let setupMap = null;
-const picks = { s0: null, s1: null };
-const spacing = chips($('[data-opt=spacing]'), { 400: 'Every 400 m', 800: 'Every 800 m', 1500: 'Every 1.5 km', 100000: 'Finish only' }, '800', refreshSetup);
-
-function refreshSetup() {
-  const ok = picks.s0 != null && picks.s1 != null && Math.abs(picks.s1 - picks.s0) >= 500;
-  $('#setupSend').disabled = !ok;
-  let text = '';
-  if (picks.s0 == null) text = 'Click the road to place the start.';
-  else if (picks.s1 == null) text = 'Now click the road to place the finish.';
-  else {
-    const len = Math.abs(picks.s1 - picks.s0);
-    const n = Math.max(0, Math.round(len / Number(spacing.get())) - 1);
-    text = len < 500 ? 'Too short — make it at least 500 m along the road.'
-      : `${(len / 1000).toFixed(1)} km along the road · ${n} checkpoint${n === 1 ? '' : 's'} + finish`;
-  }
-  $('#setupSummary').textContent = text;
+function setupBigMap() {
+  ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true });
+  ui.bigMap.onSpot = (spot) => ui.showSpotCard(spot, game.bestTimes[spot.id], (s) => {
+    game.setWaypointSpot(s);
+    ui.toast(`Route set to ${s.name}.`);
+    closeOverlays();
+  });
+  ui.bigMap.onPick = (x, z) => {
+    ui.showSpotCard(null);
+    game.setWaypointPoint(x, z);
+  };
 }
 
-function drawSetup() {
-  if ($('#raceSetup').classList.contains('hidden')) return;
-  setupMap.draw({ me: game.car.pos, heading: game.car.yaw, others: [], picks });
-  requestAnimationFrame(drawSetup);
-}
-
-$('#raceBtn').onclick = () => {
-  if (game.hostRace) return;
-  closeOverlays();
-  if (!setupMap) {
-    setupMap = new MapView($('#setupMap'), game.world, { interactive: true });
-    setupMap.onPick = (x, z) => {
-      const n = game.world.road.nearestAnywhere(x, z);
-      if (!n || n.dist > 18 / setupMap.scale) return; // must click near the road
-      if (picks.s0 == null || picks.s1 != null) { picks.s0 = n.s; picks.s1 = null; } else picks.s1 = n.s;
-      refreshSetup();
-    };
-  }
-  setupMap.follow = true;
-  setupMap.scale = 0.08;
-  picks.s0 = picks.s1 = null;
-  refreshSetup();
-  $('#raceSetup').classList.remove('hidden');
-  requestAnimationFrame(() => { setupMap.follow = false; });
-  drawSetup();
-};
-document.querySelectorAll('[data-quick]').forEach((b) => (b.onclick = () => {
-  const n = game.world.road.nearestAnywhere(game.car.pos.x, game.car.pos.z);
-  const dir = Math.sin(game.car.yaw) * n.tx + Math.cos(game.car.yaw) * n.tz >= 0 ? 1 : -1;
-  picks.s0 = n.s;
-  picks.s1 = n.s + dir * Number(b.dataset.quick);
-  setupMap.fitRoute(picks.s0, picks.s1);
-  refreshSetup();
-}));
-$('#clearPicks').onclick = () => { picks.s0 = picks.s1 = null; refreshSetup(); };
-$('#setupCancel').onclick = closeOverlays;
-$('#setupSend').onclick = () => {
-  closeOverlays();
-  game.createRace({ s0: picks.s0, s1: picks.s1, spacing: Number(spacing.get()) });
-};
+// host safety valve: call off a stuck race
 $('#endRaceBtn').onclick = () => game.endRace(true);
-
-// toggle host buttons according to race state
 setInterval(() => {
   if (!game.running || !game.isHost) return;
-  const active = !!game.hostRace;
-  $('#raceBtn').classList.toggle('hidden', active);
-  $('#endRaceBtn').classList.toggle('hidden', !active);
+  $('#endRaceBtn').classList.toggle('hidden', !game.hostRace || game.hostRace.phase === 'lobby');
 }, 250);
 
 // debug handle for testing in the console

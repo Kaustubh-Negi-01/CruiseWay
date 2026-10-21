@@ -1,23 +1,27 @@
 # Convoy
 
-An endless golden-hour ride through rolling hills, made to share with friends.
+An open-world island ride made to share with friends: golden-hour hills, a whole network of roads and dirt tracks, and race spots dotted around the map.
 
-Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together. Other riders show up as see-through ghost bikes with name tags. When the host feels like it, they set a start and finish on the map and send a race invite. Everyone who accepts is moved to the same start line, frozen for a 3-2-1 countdown, and then it's a free-for-all. You have to pass each checkpoint, but you can take any route, so cutting across the hills and weaving through forests is fair game.
+Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together. Other riders show up as see-through ghost bikes with name tags.
 
 ## Features
 
-- **Endless procedural landscape.** Smooth rolling hills and a road that rides along the hillsides through gentle cuts. Around it: knee-high grass that sways in the wind, pine forests, lone trees and heather, under a golden-hour sky with drifting clouds and haze that glows toward the sun.
-- **Same world for everyone.** The world seed decides everything, so every player builds the identical road, hills and trees on their own device. Terrain builds in a background worker with distance-based detail, so hills stretch about 2 km out without stuttering.
-- **One sport bike** with a tucked-in rider. It leans into corners, and its suspension soaks up the terrain, so riding off-road feels smooth. Tree trunks are solid, so forest shortcuts take some weaving.
-- **Ghost multiplayer** for up to 6 players. There are no collisions between riders, and positions are interpolated so ghosts move smoothly.
-- **Host-run races:**
-  - Pick the start and finish on the map, or use the quick "3 / 6 / 10 km from me" buttons.
-  - Choose how far apart checkpoints are.
-  - Invites with accept/decline, then a frozen countdown.
+- **An island to explore.** About 8×8 km, with a coastline and the sea all round, and lakes in some valleys. Rolling hills, pine forests, lone trees and knee-high grass that sways in the wind, all under a golden-hour sky with drifting clouds and haze that glows toward the sun.
+- **A road network.** Paved roads meet at junctions, with dashed centre lines on straights and double lines through bends. Dirt roads and dead-end trails lead into the hills, and everywhere in between is open ground you can ride across.
+- **Same world for everyone.** The world seed decides everything (terrain, roads, trees and race spots), so every player builds the identical island on their own device. Terrain builds in a background worker with distance-based detail, so you can see about 2 km without stutter.
+- **The ride: an enclosed streamliner superbike.** Fat tyres, glowing hubless rims, and light strips in your colour. It leans into corners, and its suspension follows the ground smoothly. Grip differs on tarmac, dirt and grass. Tree trunks are solid. Ride into the sea and you're put back on the road.
+- **Map and GPS.**
+  - Press <kbd>M</kbd> for a satellite-style map of the island.
+  - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time.
+  - Press *Set route* for turn-by-turn GPS along the roads, or click anywhere on the map to drop a waypoint.
+  - The minimap rotates with you and shows your route.
+- **Race spots.**
+  - Nine spots on every island. Each has a fixed route along the network, a name, and a difficulty from Easy to Extreme. Difficulty comes from length, twistiness, climbing and dirt, ranked against the other spots on that island.
+  - Ride up to a spot and *READY TO RACE?* pops up. Accept, and a lobby opens for 15 seconds so friends can ride over and join. Any member can press *Start now*.
+  - Then everyone spawns on the same start line for a frozen 3-2-1, then go.
+  - You must pass each checkpoint, but any route counts, so off-road shortcuts are fair game.
   - <kbd>R</kbd> takes you back to your last checkpoint.
-  - Live standings during the race.
-  - After the first finisher, everyone else gets 60 more seconds.
-- **Session leaderboard** of race wins per player. It lives only as long as the world does.
+  - Results at the end, and the session leaderboard counts wins.
 - **Controls:** keyboard, gamepad and on-screen touch controls.
 
 | Key | Action |
@@ -27,6 +31,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | R | Reset to road (in a race: last checkpoint) |
 | C | Cycle camera |
 | M | Map |
+| Enter / Backspace | Accept / dismiss a race prompt |
 | Esc | Menu |
 
 ## How multiplayer works
@@ -35,7 +40,7 @@ There is no game server. The host's browser *is* the server:
 
 - The world code maps to the host's [PeerJS](https://peerjs.com) id.
 - Guests open a WebRTC data channel straight to the host.
-- The host relays positions 15 times a second and runs the roster and races.
+- The host relays positions 15 times a second and runs the roster, race lobbies and results.
 - The free public PeerJS broker is used only to introduce browsers to each other.
 
 Because of this, the whole game deploys as static files, and the world closes when the host leaves.
@@ -63,19 +68,20 @@ Netlify, Cloudflare Pages and GitHub Pages work the same way, because it's a sta
 
 ```
 src/
-  main.js          menus, wiring, race-setup panel
-  game.js          scene, camera, ghosts, session protocol + race logic
+  main.js          menus, wiring, map overlay
+  game.js          scene, camera, ghosts, GPS, spots, lobbies + races
   net.js           PeerJS host/guest transport
-  physics.js       motorbike handling, suspension, tree collisions
-  bike.js          the bike + rider model and tuning
+  physics.js       bike handling, suspension, surfaces, tree collisions
+  bike.js          the streamliner model and tuning
   markers.js       start/checkpoint/finish gates and beacon
-  map.js           minimap / full map / race picker
+  map.js           satellite map, minimap, GPS drawing
   ui.js            HUD and overlays
   input.js         keyboard, gamepad, touch
   world/
-    road.js        deterministic endless road
-    world.js       chunk streaming (LOD), trees, road meshes
-    terrainGen.js  height function, chunk + tree generation (shared with worker)
+    network.js     road network: junctions, paved/dirt roads, trails, routing
+    spots.js       race spots, routes, difficulty and names
+    world.js       chunk streaming (LOD), trees, roads, junctions, water, spot beacons
+    terrainGen.js  island height, chunks, trees, map image (shared with worker)
     terrain.worker.js  builds chunks off the main thread
     grass.js       streaming grass field around the rider
     materials.js   ground/road/grass shaders, haze, procedural textures
