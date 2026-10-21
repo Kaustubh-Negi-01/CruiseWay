@@ -188,3 +188,11 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 
 - Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search goes through public [Invidious](https://invidious.io) servers, or the YouTube Data API if a key is set. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
 - Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.
+
+## License
+
+The code is released under the [MIT License](LICENSE): you can use, change and share it, including commercially, as long as the copyright notice stays with it.
+
+The MIT License covers the code only. It doesn't cover:
+- the two riding recordings in `public/audio/`, which stay under the terms of wherever they came from
+- music played through the radio, which belongs to its owners and is streamed by YouTube and the radio stations
