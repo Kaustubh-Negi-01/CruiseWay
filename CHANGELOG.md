@@ -11,7 +11,13 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - The time and the weather show under the minimap.
 
 **Weather**
-- Random spells of sunny, foggy, rainy, snowy and thunderstorm weather, each lasting a few minutes. Each one blends into the next over about a minute: clouds roll in first, then the rain or snow starts.
+- Spells of sunny, cloudy, foggy, rainy, snowy and thunderstorm weather, each lasting a few minutes. Each one blends into the next over about a minute: clouds roll in first, then the rain or snow starts.
+- The order follows realistic rules:
+  - Rain, snow and storms only come out of a cloudy sky, and storms ease off into rain.
+  - A slowly drifting temperature makes clouds rain when it's warm and snow when it's cold.
+  - Rain never turns straight into snow or the other way round: at least two dry spells come in between.
+  - Fog favours dawn and night.
+  - Over time it works out to about 35% sunny, 22% cloudy, 14% foggy, 12% rain, 10% snow and 7% thunderstorms.
 - **Foggy:** thick fog cuts visibility to about 150 m.
 - **Rainy:** rain streaks, grey skies, and roads that get darker and shinier, with puddles reflecting the sky. They dry slowly afterwards.
 - **Snowy:** falling flakes. After a few minutes of snow, the ground, trees and roadsides are covered and the grass is buried. It melts away afterwards, faster in rain.

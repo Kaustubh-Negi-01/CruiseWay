@@ -13,10 +13,15 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - The world keeps time in fixed ticks, like Minecraft: 20 ticks a second, and 24,000 ticks (20 real minutes) to a full day. You get sunrise, a bright noon, golden hour, a purple dusk, and a starry night with a moon. The bike's headlight comes on at dusk and in bad weather.
   - Random weather that blends smoothly from one kind to the next over about a minute:
     - **Sunny:** the classic look.
+    - **Cloudy:** a grey sky, the in-between weather before rain or snow and after it clears.
     - **Foggy:** thick fog, about 150 m of visibility.
     - **Rainy:** rain, grey skies, and roads that turn dark and shiny with puddles.
     - **Snowy:** snowflakes. If it keeps snowing for a few minutes, the grass, trees and roadsides turn white.
     - **Thunderstorm:** heavy rain, a dark sky, lightning bolts that light up the clouds, and rolling thunder that arrives after the flash.
+  - The order is realistic, not random:
+    - Rain and snow only come from a cloudy sky, and storms ease off into rain.
+    - A slowly drifting temperature decides whether clouds bring rain and storms (warm) or snow (cold). Rain never turns straight into snow or back: at least two dry spells come in between.
+    - Fog is most likely at dawn and at night.
   - Everyone in a world shares the same clock and weather. The time and weather show under the minimap.
   - Wet roads and snow cost a little grip.
 - **A road network.** Paved roads meet at junctions, with dashed centre lines on straights and double lines through bends. Dirt roads and dead-end trails lead into the hills, and everywhere in between is open ground you can ride across.

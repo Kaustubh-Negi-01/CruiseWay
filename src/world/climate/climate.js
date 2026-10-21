@@ -8,10 +8,17 @@ import { hashString, mulberry32 } from '../generation/noise.js';
 // host's clock is the reference: guests are told the host's tick and the
 // world's weather key when they join, and get nudged every few seconds.
 //
-// Weather is a deterministic schedule of spells (sunny, foggy, rainy, snowy,
-// thunderstorm) drawn from the world seed and a key the host rolls when the
-// world is created, so every rider in a world sees the same sky. Each spell
-// blends in from the last one over about a minute. Snow cover and wet ground
+// Weather is a deterministic schedule of spells (sunny, cloudy, foggy, rainy,
+// snowy, thunderstorm) drawn from the world seed and a key the host rolls when
+// the world is created, so every rider in a world sees the same sky. Each
+// spell blends in from the last one over about a minute.
+//
+// The order is realistic, not random: what comes next depends on what's
+// happening now (see NEXT), and a slowly drifting temperature decides
+// whether clouds bring rain and storms (warm) or snow (cold). Rain never
+// turns straight into snow or the other way round: the weather clears or
+// clouds over in between while the air cools or warms. Fog likes dawn and
+// night and rarely forms at midday. Snow cover and wet ground
 // build up and fade tick by tick, from that same schedule.
 
 export const TPS = 20;
@@ -24,14 +31,27 @@ const SECONDS = TPS, MINUTES = 60 * TPS;
 //   overcast: cloud deck (0 clear .. 1 heavy)   fog: haze density (0 = normal)
 //   rain / snow: precipitation    storm: lightning + thunder    wind: gusts
 export const WEATHER = {
-  clear: { label: 'Sunny',        icon: '☀', overcast: 0,    fog: 0,      rain: 0,   snow: 0, storm: 0, wind: 0.15, weight: 34, len: [4, 8] },
-  fog:   { label: 'Foggy',        icon: '🌫', overcast: 0.55, fog: 0.0125, rain: 0,   snow: 0, storm: 0, wind: 0.05, weight: 14, len: [3, 5] },
-  rain:  { label: 'Rainy',        icon: '🌧', overcast: 0.8,  fog: 0.0026, rain: 0.75, snow: 0, storm: 0, wind: 0.4,  weight: 20, len: [3, 6] },
-  snow:  { label: 'Snowy',        icon: '❄', overcast: 0.75, fog: 0.0036, rain: 0,   snow: 1, storm: 0, wind: 0.3,  weight: 14, len: [5, 8] },
-  storm: { label: 'Thunderstorm', icon: '⛈', overcast: 1,    fog: 0.003,  rain: 1,   snow: 0, storm: 1, wind: 1,    weight: 18, len: [3, 5] },
+  clear:  { label: 'Sunny',        icon: '☀', overcast: 0,    fog: 0,      rain: 0,    snow: 0, storm: 0, wind: 0.15, len: [4, 8] },
+  cloudy: { label: 'Cloudy',       icon: '☁', overcast: 0.6,  fog: 0.0012, rain: 0,    snow: 0, storm: 0, wind: 0.3,  len: [2, 4] },
+  fog:    { label: 'Foggy',        icon: '🌫', overcast: 0.55, fog: 0.0125, rain: 0,    snow: 0, storm: 0, wind: 0.05, len: [3, 5] },
+  rain:   { label: 'Rainy',        icon: '🌧', overcast: 0.8,  fog: 0.0026, rain: 0.75, snow: 0, storm: 0, wind: 0.4,  len: [3, 6] },
+  snow:   { label: 'Snowy',        icon: '❄', overcast: 0.75, fog: 0.0036, rain: 0,    snow: 1, storm: 0, wind: 0.3,  len: [5, 8] },
+  storm:  { label: 'Thunderstorm', icon: '⛈', overcast: 1,    fog: 0.003,  rain: 1,    snow: 0, storm: 1, wind: 1,    len: [3, 5] },
 };
 const KINDS = Object.keys(WEATHER);
-const TOTAL_WEIGHT = KINDS.reduce((a, k) => a + WEATHER[k].weight, 0);
+
+// What can follow what (relative odds). Precipitation only comes out of a
+// cloudy sky, storms ease off into rain, and skies clear or cloud over before
+// anything new falls. Snow and rain are then filtered by temperature.
+const NEXT = {
+  clear:  { clear: 2, cloudy: 6, fog: 2 },
+  cloudy: { clear: 2, fog: 1, rain: 4, snow: 4, storm: 3 },
+  fog:    { clear: 5, cloudy: 4 },
+  rain:   { cloudy: 4, clear: 2, fog: 2, storm: 3 },
+  storm:  { rain: 6, cloudy: 3 },
+  snow:   { cloudy: 4, clear: 3, fog: 2 },
+};
+const COLD = 0.4;   // below this temperature clouds snow; above it they rain
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -87,16 +107,18 @@ export class Climate {
     while (this.spells.length <= i) {
       const n = this.spells.length;
       const r = mulberry32(this.key ^ Math.imul(n + 1, 2654435761));
-      let kind = 'clear';
       if (n > 0) {
         const prev = this.spells[n - 1];
-        kind = pick(r);
-        if (kind === prev.kind && kind !== 'clear') kind = pick(r); // rarely the same twice
+        const start = prev.start + prev.len;
+        // the air warms and cools slowly, a step at a time
+        const temp = Math.min(1, Math.max(0, prev.temp + (r() - 0.5) * 0.3));
+        const kind = nextKind(prev, temp, this.dayFraction(start), r);
         const [a, b] = WEATHER[kind].len;
-        this.spells.push({ start: prev.start + prev.len, len: Math.round((a + r() * (b - a)) * MINUTES), kind });
+        const fell = kind === 'rain' || kind === 'storm' ? 'rain' : kind === 'snow' ? 'snow' : null;
+        this.spells.push({ start, len: Math.round((a + r() * (b - a)) * MINUTES), kind, temp, last: fell || prev.last, gap: fell ? 0 : prev.gap + 1 });
       } else {
-        // every world opens with a sunny spell
-        this.spells.push({ start: -MINUTES, len: Math.round((5 + r() * 3) * MINUTES), kind });
+        // every world opens with a sunny spell, at a random temperature
+        this.spells.push({ start: -MINUTES, len: Math.round((5 + r() * 3) * MINUTES), kind: 'clear', temp: 0.2 + r() * 0.6, last: null, gap: 9 });
       }
     }
     return this.spells[i];
@@ -211,10 +233,25 @@ export class Climate {
   }
 }
 
-function pick(r) {
-  let x = r() * TOTAL_WEIGHT;
-  for (const k of KINDS) { x -= WEATHER[k].weight; if (x < 0) return k; }
-  return 'clear';
+// Pick what follows spell `prev`, given the temperature and time of day.
+// prev.last is the last thing that fell (rain or snow) and prev.gap how many
+// dry spells ago. Switching between rain and snow needs at least two dry
+// spells in between, while the air cools or warms.
+function nextKind(prev, temp, day, r) {
+  const odds = { ...NEXT[prev.kind] };
+  if (temp < COLD) { odds.rain = 0; odds.storm = 0; } else odds.snow = 0;
+  if (prev.gap < 2) {
+    if (prev.last === 'rain') odds.snow = 0;
+    if (prev.last === 'snow') { odds.rain = 0; odds.storm = 0; }
+  }
+  const hour = (day * 24 + 6) % 24;
+  if (odds.fog) odds.fog *= hour < 9 || hour > 20 ? 2 : hour > 11 && hour < 17 ? 0.35 : 1;
+  let total = 0;
+  for (const k in odds) total += odds[k];
+  if (total <= 0) return 'cloudy';
+  let x = r() * total;
+  for (const k in odds) { x -= odds[k]; if (x < 0) return k; }
+  return 'cloudy';
 }
 
 // Blend weather a -> b by b (0..1).
