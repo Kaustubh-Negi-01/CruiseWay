@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // closes off side roads. Where the route doubles back close to itself, the
 // wall pieces that would cut across the road are left out (and don't collide).
 
-const MARGIN = 1.1;        // metres beyond the road edge
+const MARGIN = 2.8;        // metres beyond the road edge (room to run wide in bends)
 const HEIGHT = 2.6;
 const PIECE = 48;          // samples per mesh (culled / faded by distance)
 const BIKE_HALF = 0.45;    // how close the bike's centre can get to a wall
@@ -169,10 +169,11 @@ export class RaceBarriers {
     pos.z = p.z + nz * limit;
     const vn = vel.x * nx + vel.z * nz;
     if (vn <= 0) return 0;
-    // kill the push into the wall (a little bounce) and scrub speed
-    vel.x -= nx * vn * 1.35;
-    vel.z -= nz * vn * 1.35;
-    const scrub = Math.max(0.55, 1 - vn * 0.04);
+    // remove the push into the wall so you slide along it; a glancing touch
+    // costs a little speed, a head-on hit a lot more
+    vel.x -= nx * vn * 1.05;
+    vel.z -= nz * vn * 1.05;
+    const scrub = Math.max(0.65, 1 - vn * 0.025);
     vel.x *= scrub; vel.z *= scrub;
     this.uniforms.uHitPos.value.set(pos.x + nx * 0.5, pos.y + 1, pos.z + nz * 0.5);
     this.uniforms.uHitAge.value = 0;

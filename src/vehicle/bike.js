@@ -13,6 +13,7 @@ export const BIKE = {
   offGrip: 5.0, offTop: 0.86, offDrag: 0.12,   // grass / open ground
   steer: 1.7, handbrakeGrip: 1.6,
   camDist: 5.0, camHeight: 1.7,
+  rearZ: -0.88,      // rear axle position along the bike (wheelies pivot here)
 };
 
 // glow colours handed out to players in join order

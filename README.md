@@ -21,7 +21,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Nine spots on every island. Each has a fixed route along the network, a name, and a difficulty from Easy to Extreme. Difficulty comes from length, twistiness, climbing and dirt, ranked against the other spots on that island.
   - Ride up to a spot and *READY TO RACE?* pops up. Accept, and a lobby opens for 15 seconds so friends can ride over and join. Any member can press *Start now*.
   - Then everyone spawns on the same start line for a frozen 3-2-1, then go.
-  - Holographic barriers line both sides of the route while you race. Brushing one pushes you back onto the track and costs you speed, so racing is about clean lines, not shortcuts.
+  - Holographic barriers line both sides of the route while you race, with room to run wide in bends. Brush one and you slide along it; hit one head-on and you lose a lot of speed. Racing is about clean lines, not shortcuts.
   - Checkpoints count in order.
   - <kbd>R</kbd> takes you back to your last checkpoint.
   - Results at the end, and the session leaderboard counts wins.
@@ -40,6 +40,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | --- | --- |
 | W A S D / arrows | Ride |
 | Space | Rear brake / slide |
+| Shift (hold, 40+ km/h) | Wheelie. Watch the bar under the speedometer; steering gets twitchy. |
 | R | Reset to road (in a race: last checkpoint) |
 | C | Cycle camera |
 | M | Map |

@@ -203,6 +203,7 @@ export class SoundManager {
   }
 
   burst(level, dur, type, freq, q = 0.7) {
+    if (!this.ctx) return null; // audio not unlocked yet
     const ctx = this.ctx, t = ctx.currentTime;
     const g = gain(ctx, 0, this.fx);
     g.gain.setValueAtTime(level, t);
