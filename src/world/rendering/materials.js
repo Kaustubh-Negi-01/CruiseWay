@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PAVED_HALF } from './network.js';
+import { PAVED_HALF } from '../generation/network.js';
 
 // Shared look: procedural textures, and shader patches that add
 //  - sun-tinted atmospheric haze (replaces three's fog),

@@ -1,8 +1,8 @@
-import { Game, QUALITY, presetFor } from './game.js';
-import { UI, chips } from './ui.js';
-import { Input } from './input.js';
-import { Net, normalizeCode } from './net.js';
-import { MapView } from './map.js';
+import { Game, QUALITY, presetFor } from './core/game.js';
+import { UI, chips } from './ui/hud.js';
+import { Input } from './core/input.js';
+import { Net, normalizeCode } from './network/net.js';
+import { MapView } from './ui/map.js';
 
 const $ = (s) => document.querySelector(s);
 const store = {

@@ -1,6 +1,6 @@
 import { MapView } from './map.js';
-import { fmtTime } from './game.js';
-import { DIFFICULTY } from './world/spots.js';
+import { fmtTime } from '../core/game.js';
+import { DIFFICULTY } from '../world/generation/spots.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

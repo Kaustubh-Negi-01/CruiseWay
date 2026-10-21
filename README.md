@@ -83,26 +83,48 @@ Netlify, Cloudflare Pages and GitHub Pages work the same way, because it's a sta
 ## Project layout
 
 ```
+index.html                 page shell: menus, HUD, overlays (markup only)
 src/
-  main.js          menus, wiring, map overlay
-  game.js          scene, camera, ghosts, GPS, spots, lobbies + races
-  net.js           PeerJS host/guest transport
-  physics.js       bike handling, suspension, surfaces, tree collisions
-  bike.js          the streamliner model and tuning
-  markers.js       start/checkpoint/finish gates and beacon
-  map.js           satellite map, minimap, GPS drawing
-  ui.js            HUD and overlays
-  input.js         keyboard, gamepad, touch
+  main.js                  entry point: wires menus, settings, cursor, map overlay
+
+  core/                    the game itself
+    game.js                main loop, cameras, ghosts, GPS, race spots,
+                           lobbies and races, graphics presets
+    input.js               keyboard, gamepad and touch controls
+
+  network/
+    net.js                 PeerJS host/guest connection (world codes)
+
+  vehicle/
+    bike.js                the bike model, its tuning, cockpit speedometer
+    physics.js             riding physics: grip, lean, suspension, collisions
+
+  race/
+    markers.js             start / checkpoint / finish gates and beacon
+
+  ui/
+    hud.js                 HUD, prompts, results, performance overlay
+    map.js                 satellite map, minimap, GPS drawing
+    style.css              all styling
+
   world/
-    network.js     road network: junctions, paved/dirt roads, trails, routing
-    spots.js       race spots, routes, difficulty and names
-    world.js       chunk streaming (LOD), trees, roads, junctions, water, spot beacons
-    terrainGen.js  island height, chunks, trees, map image (shared with worker)
-    terrain.worker.js  builds chunks off the main thread
-    grass.js       streaming grass field around the rider
-    materials.js   ground/road/grass shaders, haze, procedural textures
-    sky.js         golden-hour light, sky dome, clouds
-    noise.js       seeded RNG + simplex noise
+    generation/            pure maths, shared with the background worker
+      noise.js             seeded random + noise
+      terrainGen.js        island height, terrain chunks, trees, map image
+      network.js           road network + GPS routing
+      spots.js             race spots, routes, difficulty, names
+      terrain.worker.js    builds terrain off the main thread
+    rendering/             three.js side of the world
+      world.js             chunk streaming, roads, trees, water, beacons
+      materials.js         shaders: ground, roads, grass, haze
+      grass.js             grass around the rider
+      sky.js               sky, sun, clouds, reflections
 ```
+
+Where to look:
+- **Handling feels off:** `src/vehicle/physics.js` (the tuning numbers are at the top of `src/vehicle/bike.js`).
+- **Race rules:** `src/core/game.js`, in the race section.
+- **How the island looks:** `src/world/`.
+- **Buttons and menus:** `index.html` and `src/ui/`.
 
 Inspired by the calm open-road feel of games like slowroads.io. All code and art here is original.

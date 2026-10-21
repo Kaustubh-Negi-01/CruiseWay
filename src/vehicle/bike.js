@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { patch } from './world/materials.js';
+import { patch } from '../world/rendering/materials.js';
 
 // The ride: a hubless concept superbike (an original design). Glowing
 // translucent tyres on open rims, a low faceted lower body, a sculpted glossy

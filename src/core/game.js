@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { World } from './world/world.js';
-import { Environment } from './world/sky.js';
-import { Bike } from './physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from './bike.js';
-import { RaceMarkers } from './markers.js';
-import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from './world/network.js';
+import { World } from '../world/rendering/world.js';
+import { Environment } from '../world/rendering/sky.js';
+import { Bike } from '../vehicle/physics.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from '../vehicle/bike.js';
+import { RaceMarkers } from '../race/markers.js';
+import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
 const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts

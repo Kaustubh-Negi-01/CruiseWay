@@ -1,6 +1,6 @@
-import { MAP_EXTENT } from './world/terrainGen.js';
-import { KIND_DIRT } from './world/network.js';
-import { DIFFICULTY } from './world/spots.js';
+import { MAP_EXTENT } from '../world/generation/terrainGen.js';
+import { KIND_DIRT } from '../world/generation/network.js';
+import { DIFFICULTY } from '../world/generation/spots.js';
 
 // Island map: a satellite-style picture (terrain image from the worker with
 // the road network painted on top), plus live overlays — spots, riders,
