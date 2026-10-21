@@ -2,6 +2,26 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
+## 1.0 · Day, night and weather
+
+**Day cycle**
+- The world runs on a fixed 20-tick-a-second clock, like Minecraft. A full day is 24,000 ticks (20 minutes).
+- The sun rises, crosses the sky and sets. The colours move through dawn, noon, golden hour, dusk and a starry night with a moon.
+- The headlight comes on at dusk and in fog, rain and storms. Reflections on the bike dim at night.
+- The time and the weather show under the minimap.
+
+**Weather**
+- Random spells of sunny, foggy, rainy, snowy and thunderstorm weather, each lasting a few minutes. Each one blends into the next over about a minute: clouds roll in first, then the rain or snow starts.
+- **Foggy:** thick fog cuts visibility to about 150 m.
+- **Rainy:** rain streaks, grey skies, and roads that get darker and shinier, with puddles reflecting the sky. They dry slowly afterwards.
+- **Snowy:** falling flakes. After a few minutes of snow, the ground, trees and roadsides are covered and the grass is buried. It melts away afterwards, faster in rain.
+- **Thunderstorm:** heavy rain, a dark sky and wind, forked lightning bolts that light up the clouds and land, and thunder. Close strikes crack and boom; far ones roll for seconds. Thunder arrives after the flash, at the speed of sound.
+- Rain and snow catch your headlight at night.
+- Wet roads and snow cost a little grip.
+- Everyone in a world sees the same time and weather: the host's clock and weather key are shared when you join.
+- New setting in the Esc menu, **Weather: Live / Always sunny**. Always sunny applies to your screen only.
+- Rain and snow drop counts follow the graphics preset. Each is a single GPU draw call.
+
 ## 0.9 · YouTube radio
 
 **Radio (Q)**

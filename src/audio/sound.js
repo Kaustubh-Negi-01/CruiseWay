@@ -1,8 +1,10 @@
 import { ZenMusic } from './music.js';
+import { WeatherSound } from './weather.js';
 
 // Game audio, using the Web Audio API.
 //
 //   master ─┬─ effects bus ─ riding sound (the two recorded clips) + one-shots
+//           │                + weather (rain, wind, thunder: see weather.js)
 //           └─ music bus ─── zen soundtrack
 //
 // Riding sound is only the two recordings in public/audio: one for tarmac,
@@ -52,6 +54,7 @@ export class SoundManager {
     this.musicBus.connect(this.master);
     this.white = noiseBuffer(ctx);
     this.music = new ZenMusic(ctx, this.musicBus);
+    this.weatherSound = new WeatherSound(ctx, this.fx);
     this.loadSamples();
     this.apply();
     document.addEventListener('visibilitychange', () => {
@@ -83,6 +86,18 @@ export class SoundManager {
   }
 
   // While the radio plays, the zen music fades out (and comes back after).
+  // Rain and wind follow the weather; null fades them out (left the world).
+  weather(w) {
+    if (!this.weatherSound) return;
+    this.weatherSound.update(w || {}, !w || !this.riding);
+  }
+
+  // Thunder from a strike `dist` metres away (arrives after the flash).
+  thunder(dist) {
+    if (!this.weatherSound || !this.riding) return;
+    this.weatherSound.thunder(dist);
+  }
+
   setDuck(on) {
     this.ducked = on;
     if (this.ctx) this.apply();

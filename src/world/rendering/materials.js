@@ -5,7 +5,8 @@ import { PAVED_HALF } from '../generation/network.js';
 //  - sun-tinted atmospheric haze (replaces three's fog),
 //  - world-space ground texturing for the terrain,
 //  - painted road markings,
-//  - wind sway + distance fade for grass.
+//  - wind sway + distance fade for grass,
+//  - weather on the ground: snow settling on flat surfaces, wet dark roads.
 // All colours that feed the haze/sky are display-space values so the sky dome
 // and the hazed geometry meet seamlessly at the horizon.
 
@@ -17,6 +18,8 @@ export const ATMOS = {
   uSunFogColor: { value: raw(0xffb27a) },
   uFogDensity: { value: 0.00085 },
   uTime: { value: 0 },
+  uSnow: { value: 0 },        // snow lying on the ground, 0..1
+  uWet: { value: 0 },         // wet roads and grass, 0..1
 };
 
 // ---- procedural textures ----------------------------------------------------
@@ -156,6 +159,7 @@ export function textures() {
 
 const HAZE_PARS = /* glsl */`
   uniform vec3 uSunDir; uniform vec3 uFogColor; uniform vec3 uSunFogColor; uniform float uFogDensity;
+  uniform float uSnow; uniform float uWet;
   varying vec3 vWPos;
   vec3 hazeColor(vec3 dir) {
     float s = max(dot(dir, uSunDir), 0.0);
@@ -193,7 +197,7 @@ export function patch(material, opts = {}) {
     vs = vs.replace('#include <common>', `#include <common>
       varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime;
       ${opts.terrain || opts.road ? 'attribute float aRoad; varying float vRoad; attribute float aLine; varying float vLine;' : ''}
-      ${opts.grass ? 'varying vec3 vTint; uniform sampler2D uNoise;' : ''}`);
+      ${opts.grass ? 'varying vec3 vTint; uniform sampler2D uNoise; uniform float uSnow;' : ''}`);
 
     if (opts.wind || opts.fade) {
       vs = vs.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -229,8 +233,10 @@ export function patch(material, opts = {}) {
         diffuseColor.rgb = vTint * clamp(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)) * 6.5, 0.3, 1.5);`);
     }
     if (opts.terrain) fs = fs.replace('#include <map_fragment>', TERRAIN_FRAG);
+    if (opts.road) fs = '#define SNOW_ROAD\n' + fs;
     if (opts.road) fs = fs.replace('#include <map_fragment>', ROAD_FRAG).replace('#include <roughnessmap_fragment>', ROAD_ROUGH);
-    fs = fs.replace('#include <fog_fragment>', HAZE_FRAG);
+    if (opts.snow) fs = fs.replace('#include <color_fragment>', '#include <color_fragment>\n' + SNOW_FRAG);
+    fs = fs.replace('#include <fog_fragment>', (opts.road ? WET_ROAD_FRAG : '') + HAZE_FRAG);
     shader.vertexShader = vs;
     shader.fragmentShader = fs;
   };
@@ -253,6 +259,10 @@ const GRASS_VERT = /* glsl */`
     vTint = mix(mix(lush, olive, smoothstep(0.3, 0.7, mid.r)), golden, dry) * (0.85 + small.b * 0.3) * 1.9;
     float patches = smoothstep(0.64, 0.74, mid.b) + smoothstep(0.68, 0.76, small.a) * 0.6;
     transformed *= clamp(1.0 - patches, 0.0, 1.0);
+    // snow buries the short grass and frosts what's left
+    float buried = smoothstep(0.15, 0.9, uSnow) * (0.55 + small.r * 0.35);
+    transformed.y *= 1.0 - buried;
+    vTint = mix(vTint, vec3(0.75, 0.78, 0.82), smoothstep(0.1, 0.8, uSnow) * 0.6);
   }`;
 
 const TERRAIN_FRAG = /* glsl */`
@@ -290,6 +300,7 @@ const TERRAIN_FRAG = /* glsl */`
     vec3 sandCol = vec3(0.52, 0.44, 0.3) * (0.85 + dd * 0.15);
     col = mix(col, sandCol, sand * (1.0 - shoulder));
     col *= 1.0 - smoothstep(0.0, -3.0, vWPos.y) * 0.45; // darker underwater
+    col *= 1.0 - uWet * 0.28;
     diffuseColor.rgb = col;
   }`;
 
@@ -314,6 +325,7 @@ const ROAD_FRAG = /* glsl */`
     float center = mix(single, dbl, step(0.5, vLine));
     float paved = 1.0 - step(1.5, vLine);          // 0,1 = marked road; 2 = dirt; 3 = junction
     markMask = clamp(edge + center, 0.0, 1.0) * (0.75 + n2 * 0.25) * paved;
+    asphalt *= 1.0 - uWet * 0.4;
     diffuseColor.rgb = mix(asphalt, vec3(0.78, 0.77, 0.72), markMask);
     if (vLine > 1.5 && vLine < 2.5) {
       // packed dirt with two darker wheel ruts and a grassy crown
@@ -330,3 +342,38 @@ const ROAD_FRAG = /* glsl */`
 
 const ROAD_ROUGH = /* glsl */`
   float roughnessFactor = mix(0.82, 0.6, markMask);`;
+
+// Snow settles on surfaces that face up, starting in patches and spreading
+// as uSnow climbs. Roads keep clear wheel tracks and fill in from the edges.
+const SNOW_FRAG = /* glsl */`
+  {
+    float up = clamp(normalize(vWNrm).y, 0.0, 1.0);
+    float sn = texture2D(uNoise, vWPos.xz / 23.0).g * 0.6 + texture2D(uNoise, vWPos.xz / 4.0).b * 0.4;
+    float face = up * 0.8 + sn * 0.45 - 0.2;
+    float amt = smoothstep(1.0 - uSnow * 1.15, 1.25 - uSnow * 1.15, face);
+    #ifdef SNOW_ROAD
+      float ru = vMapUv.x;
+      float edgeSnow = 1.0 - smoothstep(0.04, 0.2 + sn * 0.1, min(ru, 1.0 - ru));
+      float tracks = exp(-pow((abs(ru - 0.5) - 0.22) / 0.11, 2.0));
+      // patchy slush between the tyre tracks once it has been snowing a while
+      float slush = smoothstep(0.45, 0.75, texture2D(uNoise, vWPos.xz / 3.0).r + sn * 0.25) * smoothstep(0.6, 1.0, uSnow);
+      float roadAmt = clamp(edgeSnow + (1.0 - tracks) * slush * 0.45, 0.0, 1.0);
+      roadAmt *= vLine > 1.5 && vLine < 2.5 ? 1.25 : 1.0;   // dirt roads fill in more
+      amt = clamp(roadAmt, 0.0, 1.0) * smoothstep(0.05, 0.6, uSnow);
+    #endif
+    amt *= smoothstep(-0.2, 0.8, vWPos.y);                 // none on the water
+    vec3 snowCol = vec3(0.62, 0.65, 0.7) * (0.92 + sn * 0.12);
+    diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, amt);
+  }`;
+
+// Wet asphalt mirrors the sky: a Fresnel sheen of the haze colour (glowing
+// toward the sun or a lightning flash), stronger in puddles.
+const WET_ROAD_FRAG = /* glsl */`
+  if (uWet > 0.01) {
+    vec3 V = normalize(vWPos - cameraPosition);
+    vec3 R = reflect(V, vec3(0.0, 1.0, 0.0));
+    float fres = pow(1.0 - clamp(-V.y, 0.0, 1.0), 5.0);
+    float puddle = smoothstep(0.5, 0.68, texture2D(uNoise, vWPos.xz / 11.0).r);
+    float sheen = uWet * (0.25 + 0.75 * fres) * (0.35 + puddle * 0.65) * (1.0 - markMask * 0.6);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(R + vec3(0.0, 0.02, 0.0))), sheen * 0.75);
+  }`;

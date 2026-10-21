@@ -191,6 +191,7 @@ export class Bike {
     let grip = this.surface === 1 ? s.grip : this.surface === 2 ? s.dirtGrip : s.offGrip;
     if (input.handbrake) { grip = s.handbrakeGrip; vf -= vf * 0.5 * dt; }
     if (w.active) grip *= 0.8;
+    grip *= this.world.gripScale ?? 1;   // wet roads and snow
     vl *= Math.exp(-grip * traction * dt);
     this.slip = this.onGround ? Math.abs(vl) : 0;
     this.braking = this.onGround && vf > 2 ? Math.max(input.brake, input.handbrake ? 0.7 : 0) : 0;

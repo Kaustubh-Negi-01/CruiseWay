@@ -1,13 +1,18 @@
 import * as THREE from 'three';
 import { World } from '../world/rendering/world.js';
 import { Environment } from '../world/rendering/sky.js';
+import { WeatherFX } from '../world/rendering/weather.js';
+import { ATMOS } from '../world/rendering/materials.js';
+import { Climate, WEATHER } from '../world/climate/climate.js';
 import { Bike, WHEELIE, poseLean } from '../vehicle/physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from '../vehicle/bike.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, setEnvLevel, EYE } from '../vehicle/bike.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
+const CLOCK_EVERY = SEND_HZ * 5;   // host re-sends the world clock every 5 s
+const HEADLIGHT = 140;            // headlight intensity at night
 const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts
 const CP_RADIUS = 22;
 const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
@@ -26,16 +31,16 @@ const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quater
 
 // Graphics presets, cheapest first. Each one sets render resolution (pr),
 // anti-aliasing, shadow map, whether trees cast shadows, grass density, view
-// distance (chunks) and terrain detail rings (quads per chunk side, near to
-// far). 'fps' caps the frame rate (0 = only the user's cap applies).
+// distance (chunks), terrain detail rings (quads per chunk side, near to
+// far) and how many rain/snow drops are drawn. 'fps' caps the frame rate (0 = only the user's cap applies).
 // 'auto' runs Medium and steps down (resolution first, then preset) if the
 // machine can't hold the frame rate. It never renders above native resolution.
 export const QUALITY = {
   auto:   { label: 'Auto' },
-  eco:    { label: 'Eco',    pr: 0.7,  msaa: false, fps: 30, shadow: 0,    treeShadows: false, grass: 0.3,  view: 4.5, rings: [64, 32, 16, 8] },
-  low:    { label: 'Low',    pr: 0.85, msaa: false, fps: 0,  shadow: 1024, treeShadows: false, grass: 0.45, view: 5,   rings: [64, 32, 16, 8] },
-  medium: { label: 'Medium', pr: 1.0,  msaa: true,  fps: 0,  shadow: 1024, treeShadows: false, grass: 0.6,  view: 6,   rings: [96, 48, 24, 12] },
-  high:   { label: 'High',   pr: 1.5,  msaa: true,  fps: 0,  shadow: 2048, treeShadows: true,  grass: 1.0,  view: 7.5, rings: [128, 64, 32, 16] },
+  eco:    { label: 'Eco',    pr: 0.7,  msaa: false, fps: 30, shadow: 0,    treeShadows: false, grass: 0.3,  view: 4.5, rings: [64, 32, 16, 8],    weather: 0.35 },
+  low:    { label: 'Low',    pr: 0.85, msaa: false, fps: 0,  shadow: 1024, treeShadows: false, grass: 0.45, view: 5,   rings: [64, 32, 16, 8],    weather: 0.55 },
+  medium: { label: 'Medium', pr: 1.0,  msaa: true,  fps: 0,  shadow: 1024, treeShadows: false, grass: 0.6,  view: 6,   rings: [96, 48, 24, 12],   weather: 0.75 },
+  high:   { label: 'High',   pr: 1.5,  msaa: true,  fps: 0,  shadow: 2048, treeShadows: true,  grass: 1.0,  view: 7.5, rings: [128, 64, 32, 16], weather: 1 },
 };
 const AUTO_STEPS = ['medium', 'low', 'eco'];
 export const presetFor = (name) => QUALITY[name === 'auto' || !QUALITY[name] ? 'medium' : name];
@@ -103,6 +108,11 @@ export class Game {
     setBikeEnvironment(this.env.envMap);
     this.world.water.material.envMap = this.env.envMap;
     this.world.water.material.needsUpdate = true;
+    this.weather = new WeatherFX(scene, presetFor(this.quality).weather);
+    // headlight: lives on the bike (see setModel), lit at night and in bad weather
+    this.headlight = new THREE.SpotLight(0xfff0dc, 0, 150, 0.5, 0.6, 1.2);
+    this.headlight.position.set(0, 0.95, 1.2);   // just ahead of the nose, so it doesn't light the bike itself
+    this.headlight.target.position.set(0, 0.2, 24);
     this.car = new Bike(this.world);
     this.car.onImpact = (kind, v) => {
       if (!this.running) return;
@@ -145,6 +155,7 @@ export class Game {
       sun.shadow.map = null;
     }
     this.world.setDetail({ view: q.view, rings: q.rings, treeShadows: q.treeShadows, grass: q.grass });
+    this.weather?.setDensity(q.weather);
   }
 
   // Milliseconds between frames we allow (0 = every display refresh).
@@ -213,6 +224,10 @@ export class Game {
     this.markers?.dispose();
     this.markers = null;
     if (this.model) { this.scene.remove(this.model); disposeModel(this.model); this.model = null; }
+    this.weather?.dispose();
+    this.weather = null;
+    this.headlight?.dispose();
+    this.headlight = null;
     this.world.dispose();
     this.env.dispose();
     this.world = null;
@@ -248,6 +263,9 @@ export class Game {
     this.model = buildBike(color);
     this.modelColor = color;
     this.scene.add(this.model);
+    // the headlight leans and pitches with the bike (a wheelie points it at the sky)
+    if (this.headlight) this.model.userData.lean.add(this.headlight, this.headlight.target);
+    this.envLevelSet = -1;
   }
 
   // Slow cinematic orbit behind the main menu.
@@ -305,6 +323,12 @@ export class Game {
 
     const myColor = this.isHost ? COLORS[0] : (welcome.roster.find((p) => p.id === welcome.you)?.color || COLORS[1]);
     this.loadWorld(seed, myColor);
+    // world time + weather: the host rolls the weather key; guests take the host's clock
+    const clock = this.isHost ? { tick: 0, key: Math.floor(Math.random() * 1e9) } : (welcome.clock || { tick: 0, key: 0 });
+    this.climate = new Climate(seed, clock.key, clock.tick);
+    if (this.clearSkies) this.climate.force('clear');
+    this.netTicks = 0;
+    this.wx = {};
     if (welcome?.spawn) {
       // guests appear just behind the host
       const n = this.world.net.nearestAnywhere(welcome.spawn.x, welcome.spawn.z);
@@ -349,6 +373,7 @@ export class Game {
     if (!this.running) return;
     const snap = this.car.snapshot();
     if (this.isHost) {
+      if (++this.netTicks % CLOCK_EVERY === 0) this.net.broadcast({ t: 'clock', tick: this.climate.now() });
       this.latest.set(this.selfId, snap);
       const list = [];
       for (const [id, s] of this.latest) list.push({ id, ...s });
@@ -361,6 +386,7 @@ export class Game {
   stop() {
     this.running = false;
     this.sound?.stopRide();
+    this.sound?.weather(null);
     this.barriers?.dispose();
     this.barriers = null;
     this.ticker?.terminate();
@@ -400,8 +426,10 @@ export class Game {
     this.sound?.update({ speed: c.speed, throttle: c.frozen ? 0 : inp.throttle, braking: c.braking, slip: c.slip, surface: c.surface, onGround: c.onGround, lean: c.lean });
     this.car.applyTo(this.model);
     this.world.update(this.car.pos, this.race?.participant ? this.race.spot.id : -1);
+    this.updateClimate();
     this.env.update(dt, this.car.pos);
     this.updateCamera(dt);
+    this.weather.update(dt, this.camera, this.wx, this.env.envLevel, this.renderer.domElement.height, this.headlight.intensity / HEADLIGHT);
     this.updateGhosts(now);
     if (this.race) this.updateRace(now);
     if (this.markers) this.markers.update(now / 1000);
@@ -441,6 +469,51 @@ export class Game {
         this.resetCar();
       }
     } else this.car.underwater = 0;
+  }
+
+  // ---- time of day + weather -----------------------------------------------------
+
+  // Runs the world's 20-tick clock, then sets the sky, light, haze, ground
+  // (snow / wet), headlight, rain sound and lightning for this frame.
+  updateClimate() {
+    const cl = this.climate, w = this.wx;
+    cl.update();
+    cl.state(w);
+    const env = this.env;
+    env.flash = this.weather.flash;
+    env.setTime(w.day, w);
+    ATMOS.uSnow.value = w.cover;
+    ATMOS.uWet.value = w.wet;
+    this.world.setWeatherFog(w.fog);
+    // wet roads and snow cost a little grip
+    this.world.gripScale = 1 - w.wet * 0.08 - w.cover * 0.15;
+    for (const ev of cl.events) {
+      this.weather.strike(ev, this.camera.position, (x, z) => this.world.heightAt(x, z));
+      this.sound?.thunder(ev.dist);
+    }
+    cl.events.length = 0;
+    this.sound?.weather(w);
+    // headlight: on from dusk, and in fog, rain and storms
+    const dusk = Math.min(1, Math.max(0, (0.1 - env.sunDir.y) / 0.2));
+    const gloom = Math.max(dusk, w.overcast * 0.5, Math.min(1, w.fog / 0.008) * 0.7);
+    this.headlight.intensity = HEADLIGHT * gloom;
+    // chrome reflections dim at night (only touch the materials when it changes)
+    if (Math.abs(env.envLevel - this.envLevelSet) > 0.02) {
+      this.envLevelSet = env.envLevel;
+      setEnvLevel(this.model, env.envLevel);
+      this.world.water.material.envMapIntensity = 0.9 * env.envLevel;
+    }
+    // HUD clock, a few times a second
+    if ((this.skyFrame = (this.skyFrame || 0) + 1) % 15 === 0) {
+      const k = WEATHER[w.kind];
+      this.ui.sky?.(cl.clockText(), k.icon + ' ' + k.label, dusk > 0.5);
+    }
+  }
+
+  // "Clear skies" setting: show sunny weather here regardless of the forecast.
+  setClearSkies(on) {
+    this.clearSkies = on;
+    this.climate?.force(on ? 'clear' : null);
   }
 
   // Four views: chase, far chase, cockpit, nose. The chase camera trails the
@@ -736,6 +809,7 @@ export class Game {
         this.players.set(from, { id: from, name, color, wins: 0 });
         this.net.sendTo(from, {
           t: 'welcome', you: from, hostId: this.selfId, seed: this.seed,
+          clock: { tick: this.climate.now(), key: this.climate.key2 },
           roster: this.rosterList(),
           spawn: { x: this.car.pos.x, z: this.car.pos.z },
           lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
@@ -930,6 +1004,9 @@ export class Game {
         break;
       case 'toast':
         this.ui.toast(msg.text);
+        break;
+      case 'clock':
+        this.climate?.sync(msg.tick);
         break;
       case 'bye':
         this.ui.fatal('The host closed the world.');
