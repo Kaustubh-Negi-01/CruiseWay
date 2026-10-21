@@ -1,5 +1,7 @@
 # CruiseWay
 
+**▶ Play now: [cruiseway.vercel.app](https://cruiseway.vercel.app)**. It runs in the browser on any laptop, with nothing to install. See [CHANGELOG.md](CHANGELOG.md) for everything that's been built so far.
+
 An open-world island ride made to share with friends: golden-hour hills, a whole network of roads and dirt tracks, and race spots dotted around the map.
 
 Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together. Other riders show up as see-through ghost bikes with name tags.
@@ -82,13 +84,19 @@ npm run dev
 
 To test multiplayer on one machine, open two browser windows side by side. One creates a world and the other joins with the code. A tab that's in the background stops rendering, but it keeps relaying network traffic.
 
-## Deploy to Vercel
+## Deployment
 
-1. Push this repo to GitHub.
-2. On vercel.com choose **Add New → Project** and import the repo. Vercel detects Vite automatically: the build command is `npm run build` and the output folder is `dist`.
-3. Deploy, then share `https://<your-app>.vercel.app/?join=CODE` links.
+The game is live at **https://cruiseway.vercel.app**, hosted on Vercel as the `cruiseway` project. It's a static site: Vercel runs `npm run build` and serves the `dist` folder. There's no game server, because multiplayer runs peer-to-peer between players' browsers.
 
-Netlify, Cloudflare Pages and GitHub Pages work the same way, because it's a static site.
+To publish a new version from a local checkout that's linked to the project:
+
+```bash
+npx vercel deploy --prod
+```
+
+Invite friends with a link that includes your world code: `https://cruiseway.vercel.app/?join=CODE`.
+
+Netlify, Cloudflare Pages and GitHub Pages would work the same way, since it's a static site.
 
 ## Project layout
 
