@@ -24,6 +24,14 @@ export function chips(el, options, value, onChange) {
   return { get: () => cur, set };
 }
 
+const textCache = new Map();
+function setText(sel, v) {
+  v = String(v);
+  if (textCache.get(sel) === v) return;
+  textCache.set(sel, v);
+  $(sel).textContent = v;
+}
+
 export function diffChip(spot) {
   const d = DIFFICULTY[spot.difficulty];
   return `<span class="chip diff" style="background:${d.color}">${stars(spot.difficulty)} ${d.label}</span>`;
@@ -58,10 +66,14 @@ export class UI {
   }
 
   hud(s) {
-    $('#speed').textContent = Math.round(s.speed);
-    $('#odo').textContent = (s.odometer / 1000).toFixed(1);
-    $('#surface').textContent = s.surface;
     this.hudTick++;
+    // text only changes a few times a second; touching the DOM every frame
+    // costs layout work for nothing
+    if (this.hudTick % 3 === 0) {
+      setText('#speed', Math.round(s.speed));
+      setText('#odo', (s.odometer / 1000).toFixed(1));
+      setText('#surface', s.surface);
+    }
     const mapState = {
       me: s.me, yaw: s.yaw, others: s.others, gps: s.nav?.gps, waypoint: s.nav && !s.nav.spot ? s.nav : null,
       race: s.race?.participant ? s.race.spot : null,
@@ -196,6 +208,16 @@ export class UI {
     $('#guideText').textContent = label;
     $('#guideArrow').style.transform = 'rotate(' + ((-rel * 180) / Math.PI) + 'deg)';
     el.classList.remove('hidden');
+  }
+
+  toggleStats() {
+    this.statsOn = !this.statsOn;
+    $('#stats').classList.toggle('hidden', !this.statsOn);
+  }
+
+  stats(st) {
+    if (!this.statsOn) return;
+    $('#stats').textContent = `${Math.round(st.fps)} FPS (cap ${st.cap}) · CPU ${st.cpu.toFixed(1)} ms · ${st.calls} draws · ${(st.tris / 1000).toFixed(0)}k tris · ${st.pr.toFixed(2)}x · ${st.preset}`;
   }
 
   // ---- generic ----------------------------------------------------------------

@@ -1,6 +1,7 @@
 // Keyboard, gamepad and touch merged into one driving input.
 //   W/↑ throttle · S/↓ brake/reverse · A/D ←/→ steer · Space handbrake
 //   R reset · C camera · M map · Tab players
+//   Alt+C show/hide the mouse cursor · F3 performance overlay
 // Gamepad: left stick steer, RT throttle, LT brake, A handbrake, Y reset, B camera.
 
 export class Input {
@@ -13,6 +14,12 @@ export class Input {
 
     addEventListener('keydown', (e) => {
       if (isTyping(e)) return;
+      if (e.altKey && e.code === 'KeyC') {   // not the camera key while Alt is held
+        e.preventDefault();
+        if (!e.repeat) this.fire('cursor', true);
+        return;
+      }
+      if (e.code === 'F3') { e.preventDefault(); if (!e.repeat) this.fire('stats', true); return; }
       if (e.code === 'Tab') e.preventDefault();
       if (!e.repeat) {
         const action = { KeyR: 'reset', KeyC: 'camera', KeyM: 'map', Tab: 'players', Escape: 'escape' }[e.code];

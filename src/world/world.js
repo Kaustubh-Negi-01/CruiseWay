@@ -3,21 +3,13 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from './terrainGen.js';
 import { KIND_DIRT, ROAD_STEP } from './network.js';
 import { DIFFICULTY } from './spots.js';
-import { patch, textures, raw } from './materials.js';
+import { patch, textures, raw, ATMOS } from './materials.js';
 import { GrassField } from './grass.js';
 import TerrainWorker from './terrain.worker.js?worker';
 
-const VIEW = 7.5;          // view radius in chunks (~1.9 km)
 const ROAD_PIECE = 64;     // samples per road mesh
 const MAX_IN_FLIGHT = 2;
 const MAP_SIZE = 1024;
-
-function segFor(d) {
-  if (d < 1.25) return 128;
-  if (d < 2.4) return 64;
-  if (d < 4.2) return 32;
-  return 16;
-}
 
 export class World {
   constructor(scene, seed) {
@@ -57,9 +49,41 @@ export class World {
     this.beacons = makeSpotBeacons(this.spots);
     scene.add(this.beacons);
 
-    this.grassDensity = 0.8;
+    // Detail settings (changed by the graphics preset through setDetail).
+    this.view = 6;                    // view radius in chunks
+    this.rings = [96, 48, 24, 12];    // terrain quads per chunk side, near to far
+    this.treeShadows = false;
+    this.grassDensity = 0.6;
     this.grass = new GrassField(scene, this.gen, this.grassDensity);
     this.focus = new THREE.Vector3();
+    this.setFog();
+  }
+
+  // Graphics preset hook. Chunks rebuild at the new detail as you ride.
+  setDetail({ view, rings, treeShadows, grass }) {
+    this.view = view;
+    this.rings = rings;
+    if (treeShadows !== this.treeShadows) {
+      this.treeShadows = treeShadows;
+      for (const c of this.chunks.values()) {
+        c.group.traverse((o) => { if (o.isInstancedMesh && o.userData.nearTrees) o.castShadow = treeShadows && !o.userData.bush; });
+      }
+    }
+    this.setGrassDensity(grass);
+    this.setFog();
+  }
+
+  // Haze thick enough that the edge of the loaded world melts away.
+  setFog() {
+    ATMOS.uFogDensity.value = 1.65 / (this.view * CHUNK);
+  }
+
+  segFor(d) {
+    const [a, b, c, e] = this.rings;
+    if (d < 1.25) return a;
+    if (d < 2.4) return b;
+    if (d < 4.2) return c;
+    return e;
   }
 
   setGrassDensity(d) {
@@ -85,6 +109,7 @@ export class World {
     if (this.chunks.size < 9) while (this.arrived.length) this.onChunk(this.arrived.shift()); // first load: no waiting
     const pcx = focus.x / CHUNK - 0.5, pcz = focus.z / CHUNK - 0.5;
     const cx0 = Math.floor(focus.x / CHUNK), cz0 = Math.floor(focus.z / CHUNK);
+    const VIEW = this.view;
     const R = Math.ceil(VIEW);
     const wanted = new Map();
     const todo = [];
@@ -97,7 +122,7 @@ export class World {
         const d = Math.hypot(cx - pcx, cz - pcz);
         if (d > VIEW) continue;
         const key = cx + ',' + cz;
-        const seg = segFor(d);
+        const seg = this.segFor(d);
         wanted.set(key, seg);
         const have = this.chunks.get(key);
         if ((!have || have.seg !== seg) && this.pending.get(key) !== seg) todo.push([d - (have ? 0 : 10), cx, cz, key, seg]);
@@ -145,7 +170,7 @@ export class World {
     const mesh = new THREE.Mesh(g, this.terrainMat);
     mesh.receiveShadow = true;
     group.add(mesh);
-    this.addTrees(group, m.trees, m.seg >= 128);
+    this.addTrees(group, m.trees, m.seg === this.rings[0]);
     this.group.add(group);
     if (old) this.disposeChunk(old);
     this.chunks.set(m.key, { seg: m.seg, group });
@@ -212,8 +237,10 @@ export class World {
         s.set(sc, sc * (type === TREE_PINE ? 1.1 : 1), sc);
         im.setMatrixAt(n, m.compose(p, q, s));
       });
-      im.castShadow = near && type !== TREE_BUSH;
+      im.castShadow = near && this.treeShadows && type !== TREE_BUSH;
       im.receiveShadow = near;
+      im.userData.nearTrees = near;
+      im.userData.bush = type === TREE_BUSH;
       im.computeBoundingSphere();
       group.add(im);
     });
@@ -222,7 +249,7 @@ export class World {
   // ---- roads ----------------------------------------------------------------
 
   updateRoads(focus) {
-    const R2 = (VIEW * CHUNK) ** 2;
+    const R2 = (this.view * CHUNK) ** 2;
     const net = this.net;
     for (const e of net.edges) {
       const [x0, z0, x1, z1] = e.box;
@@ -431,39 +458,35 @@ function colored(geo, hex, jitter = 0, shade = 0) {
 }
 
 function makeTreeGeometries() {
-  const trunk = (h, r0, r1) => colored(new THREE.CylinderGeometry(r1, r0, h, 6).translate(0, h / 2, 0), 0x3b2a1c);
+  const trunk = (h, r0, r1, seg = 5) => colored(new THREE.CylinderGeometry(r1, r0, h, seg, 1, true).translate(0, h / 2, 0), 0x3b2a1c);
+  // conifer: five drooping tiers of 7-sided cones (~80 triangles)
   const pineTiers = [];
-  const tiers = 7;
-  for (let t = 0; t < tiers; t++) {
-    const f = t / (tiers - 1);
-    const rad = 3.0 * (1 - f) + 0.55;
-    const y = 4.8 + t * 1.6;
+  for (let t = 0; t < 5; t++) {
+    const f = t / 4;
+    const rad = 3.1 * (1 - f) + 0.6;
+    const y = 5.0 + t * 2.1;
     const shade = [0x1e3420, 0x23392a, 0x1b2f1e][t % 3];
-    pineTiers.push(colored(new THREE.ConeGeometry(rad, 3.2, 9, 2).translate(0, y, 0), shade, 0.28, 0.35));
+    pineTiers.push(colored(new THREE.ConeGeometry(rad, 4.0, 7, 1).translate(0, y, 0), shade, 0.25, 0.35));
   }
   const pineNear = mergeGeometries([trunk(6, 0.32, 0.18), ...pineTiers]);
-  const pineFar = mergeGeometries([colored(new THREE.ConeGeometry(2.9, 12, 6).translate(0, 9.4, 0), 0x1d3220), trunk(3.6, 0.3, 0.25)]);
-  const blobs = [
-    [0, 7.2, 0, 2.9], [1.9, 6.4, 0.6, 2.2], [-1.8, 6.6, -0.4, 2.3], [0.4, 8.6, -1.2, 2.0],
-    [-0.6, 6.0, 1.9, 2.0], [0.8, 6.1, -2.0, 1.9], [-0.2, 9.4, 0.7, 1.6],
-  ];
+  const pineFar = mergeGeometries([colored(new THREE.ConeGeometry(2.9, 12, 5, 1, true).translate(0, 9.4, 0), 0x1d3220), trunk(3.6, 0.3, 0.25, 3)]);
+  // broadleaf: five faceted blobs (~130 triangles)
+  const blobs = [[0, 7.2, 0, 3.0], [1.9, 6.3, 0.6, 2.3], [-1.8, 6.5, -0.4, 2.4], [0.4, 8.7, -1.0, 2.1], [-0.4, 6.0, 1.8, 2.1]];
   const canopyCols = [0x31481c, 0x3c5622, 0x2b4019, 0x445f26];
   const broadNear = mergeGeometries([
     trunk(5.6, 0.45, 0.28),
-    colored(new THREE.CylinderGeometry(0.12, 0.2, 2.6, 5).rotateZ(0.8).translate(0.9, 5.0, 0), 0x3b2a1c),
-    colored(new THREE.CylinderGeometry(0.12, 0.2, 2.4, 5).rotateZ(-0.7).translate(-0.8, 4.9, 0.2), 0x3b2a1c),
-    ...blobs.map(([x, y, z, r], i) => colored(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), canopyCols[i % 4], 0.3, 0.25)),
+    ...blobs.map(([x, y, z, r], i) => colored(new THREE.IcosahedronGeometry(r, 0).translate(x, y, z), canopyCols[i % 4], 0.25, 0.25)),
   ]);
   const broadFar = mergeGeometries([
-    trunk(5, 0.45, 0.3),
+    trunk(5, 0.45, 0.3, 3),
     colored(new THREE.IcosahedronGeometry(3.4, 0).scale(1, 0.85, 1).translate(0, 7.4, 0), 0x34501f),
   ]);
   const bushNear = mergeGeometries([
-    colored(new THREE.IcosahedronGeometry(1.1, 1).scale(1.3, 0.6, 1).translate(0, 0.35, 0), 0x3a2f20, 0.35),
-    colored(new THREE.IcosahedronGeometry(0.8, 1).scale(1.2, 0.7, 1).translate(0.9, 0.3, 0.4), 0x463824, 0.35),
-    colored(new THREE.IcosahedronGeometry(0.7, 1).scale(1.2, 0.6, 1).translate(-0.8, 0.25, -0.3), 0x2f3a1e, 0.35),
+    colored(new THREE.IcosahedronGeometry(1.1, 0).scale(1.3, 0.6, 1).translate(0, 0.35, 0), 0x3a2f20, 0.3),
+    colored(new THREE.IcosahedronGeometry(0.8, 0).scale(1.2, 0.7, 1).translate(0.9, 0.3, 0.4), 0x463824, 0.3),
+    colored(new THREE.IcosahedronGeometry(0.7, 0).scale(1.2, 0.6, 1).translate(-0.8, 0.25, -0.3), 0x2f3a1e, 0.3),
   ]);
-  const bushFar = colored(new THREE.IcosahedronGeometry(1.2, 0).scale(1.5, 0.6, 1.1).translate(0, 0.3, 0), 0x3a3020);
+  const bushFar = colored(new THREE.OctahedronGeometry(1.2, 0).scale(1.5, 0.6, 1.1).translate(0, 0.3, 0), 0x3a3020);
   return [[pineNear, pineFar], [broadNear, broadFar], [bushNear, bushFar]];
 }
 

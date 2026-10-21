@@ -1,6 +1,5 @@
-import { Game } from './game.js';
+import { Game, QUALITY, presetFor } from './game.js';
 import { UI, chips } from './ui.js';
-import { QUALITY } from './game.js';
 import { Input } from './input.js';
 import { Net, normalizeCode } from './net.js';
 import { MapView } from './map.js';
@@ -13,7 +12,12 @@ const store = {
 
 const ui = new UI();
 const input = new Input();
-const game = new Game($('#view'), ui, input);
+// Graphics settings are read before the renderer exists: anti-aliasing can
+// only be chosen when the GL context is created.
+let quality = store.get('quality', 'auto');
+if (!QUALITY[quality]) quality = 'auto';
+const fpsCap = Number(store.get('fps', '60'));
+const game = new Game($('#view'), ui, input, { msaa: presetFor(quality).msaa, quality, fpsCap });
 
 // ---------------------------------------------------------------- menu
 
@@ -107,7 +111,30 @@ function enterGame({ net, seed, code, welcome }) {
     ui.toast(`World created. Share code ${code} with friends!`);
   }
   history.replaceState(null, '', '?join=' + code);
+  updateCursor();
+  if (!store.get('cursorTip')) {
+    store.set('cursorTip', '1');
+    ui.toast('Cursor hidden while you ride. Alt+C brings it back.');
+  }
 }
+
+// ---------------------------------------------------------------- cursor
+// Hidden while riding, like most games. It comes back by itself whenever a
+// menu, the map or a prompt is open, and Alt+C toggles it at any time.
+let cursorForced = false;
+const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt'];
+function updateCursor() {
+  const menuOpen = cursorOverlays.some((s) => !$(s).classList.contains('hidden'));
+  document.body.classList.toggle('no-cursor', game.running && !menuOpen && !cursorForced);
+}
+input.on('cursor', () => {
+  if (!game.running) return;
+  cursorForced = !cursorForced;
+  updateCursor();
+  ui.toast(cursorForced ? 'Cursor shown (Alt+C to hide)' : 'Cursor hidden (Alt+C to show)');
+});
+new MutationObserver(updateCursor).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+input.on('stats', () => ui.toggleStats());
 
 // ---------------------------------------------------------------- in game
 
@@ -151,6 +178,8 @@ input.on('map', () => {
   sizeBigMap();
   ui.bigMap.fitIsland();
 });
+new MutationObserver(() => { ui.mapOpen = !$('#mapOverlay').classList.contains('hidden'); })
+  .observe($('#mapOverlay'), { attributes: true, attributeFilter: ['class'] });
 $('#clearRoute').onclick = () => { game.clearWaypoint(); ui.toast('Route cleared.'); };
 $('#centerMe').onclick = () => { ui.bigMap.follow = true; ui.bigMap.scale = Math.max(ui.bigMap.scale, 0.35); };
 $('#resumeBtn').onclick = closeOverlays;
@@ -169,20 +198,28 @@ function setupBigMap() {
   };
 }
 
-// graphics quality (remembered per device)
+// graphics quality + frame-rate cap (remembered per device)
 const qualityHints = {
-  auto: 'Adjusts resolution on the fly to keep riding smooth.',
-  high: 'Sharpest image and detailed shadows. Needs a strong GPU.',
-  medium: 'Balanced: native resolution, lighter shadows and grass.',
-  low: 'For older laptops: lower resolution, no shadows, sparse grass.',
+  auto: 'Starts at Medium and lowers resolution, then detail, if your laptop struggles.',
+  eco: 'Coolest and quietest: 30 FPS, lower resolution, no shadows, short view distance.',
+  low: 'Lighter: lower resolution, no anti-aliasing, sparse grass.',
+  medium: 'Balanced: native resolution, bike shadow only, moderate view distance.',
+  high: 'Sharpest image, tree shadows and the longest view. Gets hot on laptops.',
 };
-const qualityPick = chips($('[data-opt=quality]'), Object.fromEntries(Object.entries(QUALITY).map(([k, v]) => [k, v.label])), store.get('quality', 'auto'), (q) => {
+function qualityHint(q) {
+  const restart = presetFor(q).msaa !== game.msaa ? ' Edge smoothing changes after a reload.' : '';
+  $('#qualityHint').textContent = qualityHints[q] + restart;
+}
+chips($('[data-opt=quality]'), Object.fromEntries(Object.entries(QUALITY).map(([k, v]) => [k, v.label])), quality, (q) => {
   store.set('quality', q);
   game.applyQuality(q);
-  $('#qualityHint').textContent = qualityHints[q];
+  qualityHint(q);
 });
-game.quality = qualityPick.get();
-$('#qualityHint').textContent = qualityHints[qualityPick.get()];
+qualityHint(quality);
+chips($('[data-opt=fps]'), { 30: '30 FPS', 60: '60 FPS', 0: 'Max' }, String(fpsCap), (v) => {
+  store.set('fps', v);
+  game.fpsCap = Number(v);
+});
 
 // host safety valve: call off a stuck race
 $('#endRaceBtn').onclick = () => game.endRace(true);
