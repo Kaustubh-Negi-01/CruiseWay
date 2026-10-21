@@ -79,7 +79,7 @@ export class World {
 
   // ---- streaming ------------------------------------------------------------
 
-  update(focus) {
+  update(focus, hideSpot = -1) {
     this.focus.copy(focus);
     if (this.arrived.length) this.onChunk(this.arrived.shift());
     if (this.chunks.size < 9) while (this.arrived.length) this.onChunk(this.arrived.shift()); // first load: no waiting
@@ -123,8 +123,10 @@ export class World {
     this.water.position.set(Math.round(focus.x / 100) * 100, 0, Math.round(focus.z / 100) * 100);
     for (const b of this.beacons.children) {
       const d = Math.hypot(b.position.x - focus.x, b.position.z - focus.z);
-      b.visible = d < 2600;
+      b.visible = d < 2600 && b.userData.spot !== hideSpot;
       if (b.userData.label) b.userData.label.visible = d < 350;
+      // the light beam fades out as you arrive, so it never fills the screen
+      b.userData.beam.material.opacity = 0.28 * Math.min(1, Math.max(0, (d - 25) / 120));
     }
   }
 
@@ -372,7 +374,7 @@ function makeSpotBeacons(spots) {
     const label = spotLabel(s);
     label.position.y = 7;
     b.add(ring, beam, label);
-    b.userData = { spot: s.id, label };
+    b.userData = { spot: s.id, label, beam };
     group.add(b);
   }
   return group;

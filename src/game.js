@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Environment } from './world/sky.js';
 import { Bike } from './physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, EYE } from './bike.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from './bike.js';
 import { RaceMarkers } from './markers.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from './world/network.js';
 
@@ -12,9 +12,9 @@ const CP_RADIUS = 22;
 const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
 const LOBBY_SECONDS = 15;   // gathering window before a race (any member can start early)
 const NOSE = new THREE.Vector3(0, 0.62, 1.34);
-const ROLL_Z = new THREE.Quaternion();
+const ROLL_Z = new THREE.Quaternion(), ROLL_FULL = new THREE.Quaternion();
 const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.07);
+const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.1);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion();
 
 // Graphics presets. 'auto' starts at 1x and lets the resolution scaler trade
@@ -157,9 +157,9 @@ export class Game {
   placeAt(p, yaw) {
     this.car.place(p.x, p.z, yaw);
     this.camPos = null;
-    // a teleport isn't "closing in" or "riding away": restart the guidance
+    // a teleport isn't "riding the wrong way": restart the guidance
     const r = this.race;
-    if (r) { r.prevDNext = null; r.closing = 0; r.wrongWay = 0; r.offRoute = 0; r.wrongRouteOn = false; }
+    if (r) r.wrongWay = 0;
     this.navAgainst = 0;
   }
 
@@ -311,7 +311,7 @@ export class Game {
     const inp = this.input.read();
     this.car.update(dt, inp);
     this.car.applyTo(this.model);
-    this.world.update(this.car.pos);
+    this.world.update(this.car.pos, this.race?.participant ? this.race.spot.id : -1);
     this.env.update(dt, this.car.pos);
     this.updateCamera(dt);
     this.updateGhosts(now);
@@ -323,6 +323,7 @@ export class Game {
     this.updateGuidance(dt);
     this.adaptResolution(dt, now);
 
+    if (this.view === 'cockpit') updateDash(this.model, Math.abs(this.car.forwardSpeed) * 3.6, this.car.odometer / 1000, this.car.surface);
     const surface = this.car.surface === KIND_DIRT ? 'dirt road' : this.car.surface === 0 ? 'off-road' : '';
     this.ui.hud({
       speed: Math.abs(this.car.forwardSpeed) * 3.6,
@@ -357,14 +358,21 @@ export class Game {
     const c = this.car, s = c.spec, m = this.model;
     const mode = this.camMode;
     const view = mode === 2 ? 'cockpit' : mode === 3 ? 'nose' : 'chase';
-    if (this.view !== view) { setBikeView(m, view); this.view = view; this.camPos = null; }
+    if (this.view !== view) {
+      setBikeView(m, view);
+      this.view = view;
+      this.camPos = null;
+      document.getElementById('hud').classList.toggle('cockpit', view === 'cockpit'); // the dash shows speed
+    }
     const k = (rate) => 1 - Math.exp(-dt * rate);
     const speed = Math.abs(c.forwardSpeed);
 
     if (view !== 'chase') {
-      // eye in the upright bike frame, plus part of the lean
+      // the eye leans with the bike (so the bike stays centred in view), but
+      // the view itself only tilts part of the way, like a rider's head
+      ROLL_FULL.setFromAxisAngle(_v2.set(0, 0, 1), c.lean);
       ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45);
-      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE).applyQuaternion(ROLL_Z).applyQuaternion(m.quaternion).add(m.position);
+      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE).applyQuaternion(ROLL_FULL).applyQuaternion(m.quaternion).add(m.position);
       this.camera.position.copy(eye);
       _q.copy(m.quaternion).multiply(ROLL_Z).multiply(FLIP_Y).multiply(TILT);
       if (!this.camPos) { this.camQuat.copy(_q); this.camPos = eye.clone(); }
@@ -408,10 +416,13 @@ export class Game {
 
   // ---- race / GPS guidance -------------------------------------------------------
 
-  // WRONG WAY: riding backwards along the race route.
-  // WRONG ROUTE: off the route and not closing in on the next checkpoint.
-  // Shortcut note: off the route but closing in (allowed!).
-  // TURN AROUND: free roam with a GPS route, heading away along it.
+  // Shortcuts are part of the game, so the only warning is TURN AROUND: shown
+  // when you ride backwards along the race route (or, in free roam, away along
+  // your GPS route).
+  //
+  // Race progress (which the yellow trail starts from) only moves while you
+  // are on the route. Leave it for a shortcut and the trail waits where you
+  // left; rejoin further on and it jumps ahead to where you came back.
   updateGuidance(dt) {
     const c = this.car, sp = c.speed;
     const vx = sp > 0.1 ? c.vel.x / sp : 0, vz = sp > 0.1 ? c.vel.z / sp : 0;
@@ -419,29 +430,17 @@ export class Game {
     let state = null, aim = null, label = '';
     if (r && r.participant && r.phase === 'running' && !r.finished) {
       const route = r.spot.route;
-      const q = route.nearestS(c.pos.x, c.pos.z, r.progressS, 320);
-      if (q.d < 55) r.progressS = q.s;
-      r.offset = q.d;
-      const against = q.d < 30 && sp > 4 && vx * q.tx + vz * q.tz < -0.35;
-      r.wrongWay = against ? r.wrongWay + dt : Math.max(0, r.wrongWay - dt * 2.5);
-      const cps = r.spot.checkpoints;
-      const tgt = r.next < cps.length ? route.at(cps[r.next]) : route.at(route.length - 1);
-      const dNext = Math.hypot(tgt.x - c.pos.x, tgt.z - c.pos.z);
-      if (r.prevDNext != null && dt > 0) r.closing += ((r.prevDNext - dNext) / dt - r.closing) * (1 - Math.exp(-dt * 2));
-      r.prevDNext = dNext;
-      const away = q.d > 45 && sp > 3 && r.closing < 2;
-      r.offRoute = away ? r.offRoute + dt : Math.max(0, r.offRoute - dt * 2.5);
-      // latch WRONG ROUTE on, and only clear it once clearly back on track
-      if (r.offRoute > 1.4) r.wrongRouteOn = true;
-      else if (r.offRoute < 0.4 || q.d < 40) r.wrongRouteOn = false;
-      if (r.wrongWay > 0.7) { state = 'wrongway'; aim = route.at(r.progressS + 40); label = 'Turn around'; }
-      else if (r.wrongRouteOn) { state = 'wrongroute'; aim = tgt; label = r.next < cps.length ? 'Head for checkpoint ' + (r.next + 1) : 'Head for the finish'; }
-      else if (q.d > 45) {
-        aim = tgt;
-        const gate = r.next < cps.length ? 'checkpoint ' + (r.next + 1) : 'the finish';
-        if (r.closing > 2) { state = 'shortcut'; label = 'Off route, but closing in on ' + gate; }
-        else { state = 'offroute'; label = 'Head for ' + gate; }
+      let q = route.nearestS(c.pos.x, c.pos.z, r.progressS, 320);
+      if (q.d > 25) {
+        // off the nearby stretch: are we back on the route somewhere further on?
+        const g = route.nearestS(c.pos.x, c.pos.z, route.length / 2, route.length, 0);
+        if (g.d < 20 && g.s > r.progressS) q = g;
       }
+      const onRoute = q.d < 20;
+      if (onRoute && q.s > r.progressS) r.progressS = q.s;
+      const against = onRoute && sp > 4 && vx * q.tx + vz * q.tz < -0.35;
+      r.wrongWay = against ? r.wrongWay + dt : Math.max(0, r.wrongWay - dt * 2.5);
+      if (r.wrongWay > 0.7) { state = 'wrongway'; aim = route.at(Math.max(q.s, r.progressS) + 40); label = "You're riding the wrong way"; }
     } else if (!r?.participant && this.nav?.gps && sp > 4) {
       const pts = this.nav.gps.pts;
       let bi = 0, bd = Infinity;
@@ -672,11 +671,6 @@ export class Game {
           hr.members.push(from);
         }
         this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
-        // everyone's in: no need to wait out the timer
-        if ([...this.players.keys()].every((id) => this.hostRace.members.includes(id))) {
-          clearTimeout(this.hostRace.lobbyTimer);
-          this.hostRace.lobbyTimer = setTimeout(() => this.launchRace(), 1500);
-        }
         break;
       }
       case 'spot_leave': {
@@ -877,7 +871,7 @@ export class Game {
     this.race = {
       id: pub.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
       next: 0, startTime: 0, finished: false,
-      progressS: spot.startS, wrongWay: 0, offRoute: 0, closing: 0, prevDNext: null, offset: 0,
+      progressS: spot.startS, wrongWay: 0,
       standings: participants.map((id) => ({ id, cp: 0, time: null })),
     };
     this.markers?.dispose();
@@ -918,26 +912,38 @@ export class Game {
   updateRace(now) {
     const r = this.race;
     if (!r.participant || r.phase !== 'running' || r.finished) return;
-    const cps = r.spot.checkpoints;
-    const target = r.next < cps.length ? r.spot.route.at(cps[r.next]) : r.spot.route.at(r.spot.route.length - 1);
-    const d = Math.hypot(target.x - this.car.pos.x, target.z - this.car.pos.z);
+    const cps = r.spot.checkpoints, route = r.spot.route;
     r.elapsed = (now - r.startTime) / 1000;
-    r.distToNext = d;
-    if (d >= CP_RADIUS) return;
-    if (r.next < cps.length) {
-      r.next++;
-      this.markers.setTarget(r.next + 1);
-      this.ui.flash(`Checkpoint ${r.next}/${cps.length}`);
-      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
-    } else {
+    const px = this.car.pos.x, pz = this.car.pos.z;
+    const near = (p) => Math.hypot(p.x - px, p.z - pz) < CP_RADIUS;
+    // Any gate ahead of you counts, so a shortcut that lands on a later
+    // checkpoint (or straight on the finish) is accepted.
+    const finish = route.at(route.length - 1);
+    if (near(finish)) {
       r.finished = true;
       r.finishTime = r.elapsed;
+      r.next = cps.length;
+      r.progressS = route.length;
       this.markers.setTarget(-1);
-      this.ui.flash(`Finished · ${fmtTime(r.elapsed)}`);
+      this.ui.flash('Finished · ' + fmtTime(r.elapsed));
       const best = this.bestTimes[r.spot.id];
       if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
+      this.toHost({ t: 'race_cp', id: r.id, i: cps.length });
       this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
+      return;
     }
+    for (let i = cps.length - 1; i >= r.next; i--) {
+      if (!near(route.at(cps[i]))) continue;
+      const skipped = i - r.next;
+      r.next = i + 1;
+      r.progressS = Math.max(r.progressS, cps[i]);
+      this.markers.setTarget(r.next + 1);
+      this.ui.flash(skipped > 0 ? 'Checkpoint ' + r.next + '/' + cps.length + ' · shortcut!' : 'Checkpoint ' + r.next + '/' + cps.length);
+      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
+      break;
+    }
+    const tgt = r.next < cps.length ? route.at(cps[r.next]) : finish;
+    r.distToNext = Math.hypot(tgt.x - px, tgt.z - pz);
   }
 
   endRaceLocal(msg) {
