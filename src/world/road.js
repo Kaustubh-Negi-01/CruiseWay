@@ -14,10 +14,19 @@ const STEP = 3;        // spacing of dense samples (m)
 const PER_SEG = SEG / STEP;
 const CELL = 32;       // spatial grid cell (m)
 
+// Road elevation is the natural terrain height under the road, low-pass
+// filtered along its length (Gaussian over ±180 m of control points). That
+// lets the road ride along hillsides with gentle grades, and the terrain is
+// cut/filled only in a narrow band beside it.
+const Y_WINDOW = 6;
+const Y_WEIGHTS = Array.from({ length: Y_WINDOW * 2 + 1 }, (_, j) => Math.exp(-(((j - Y_WINDOW) / 3.2) ** 2)));
+const Y_WSUM = Y_WEIGHTS.reduce((a, b) => a + b, 0);
+
 export class Road {
   constructor(seed, heightAt) {
     this.noise = createNoise2D(hashString(seed + ':road'));
-    this.heightAt = heightAt; // base terrain height at road centre (set by terrain)
+    this.heightAt = heightAt; // natural terrain height (before road shaping)
+    this.ctrlYCache = new Map();
     // control points: index i >= 0 in fwd[i], index -i in back[i] (back[0] unused)
     this.fwd = [{ x: 0, z: 0, h: 0 }];
     this.back = [null];
@@ -55,6 +64,20 @@ export class Road {
     return this.back[k];
   }
 
+  ctrlY(i) {
+    let y = this.ctrlYCache.get(i);
+    if (y === undefined) {
+      y = 0;
+      for (let j = -Y_WINDOW; j <= Y_WINDOW; j++) {
+        const c = this.ctrl(i + j);
+        y += this.heightAt(c.x, c.z) * Y_WEIGHTS[j + Y_WINDOW];
+      }
+      y /= Y_WSUM;
+      this.ctrlYCache.set(i, y);
+    }
+    return y;
+  }
+
   // Catmull-Rom between control points i and i+1
   sampleCtrl(i, t) {
     const p0 = this.ctrl(i - 1), p1 = this.ctrl(i), p2 = this.ctrl(i + 1), p3 = this.ctrl(i + 2);
@@ -66,7 +89,8 @@ export class Road {
     const x = f(p0.x, p1.x, p2.x, p3.x), z = f(p0.z, p1.z, p2.z, p3.z);
     let tx = df(p0.x, p1.x, p2.x, p3.x), tz = df(p0.z, p1.z, p2.z, p3.z);
     const l = Math.hypot(tx, tz) || 1;
-    return { x, z, tx: tx / l, tz: tz / l };
+    const y = f(this.ctrlY(i - 1), this.ctrlY(i), this.ctrlY(i + 1), this.ctrlY(i + 2));
+    return { x, z, y, tx: tx / l, tz: tz / l };
   }
 
   makeDense(k) {
@@ -75,7 +99,6 @@ export class Road {
     const d = this.sampleCtrl(i, t);
     d.k = k;
     d.s = k * STEP;
-    d.y = this.heightAt(d.x, d.z);
     const key = cellKey(d.x, d.z);
     let arr = this.grid.get(key);
     if (!arr) this.grid.set(key, (arr = []));
