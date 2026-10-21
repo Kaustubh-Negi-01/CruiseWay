@@ -1,4 +1,4 @@
-# Convoy
+# CruiseWay
 
 An open-world island ride made to share with friends: golden-hour hills, a whole network of roads and dirt tracks, and race spots dotted around the map.
 
