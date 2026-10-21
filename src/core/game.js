@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { World } from '../world/rendering/world.js';
 import { Environment } from '../world/rendering/sky.js';
-import { Bike } from '../vehicle/physics.js';
+import { Bike, WHEELIE, poseLean } from '../vehicle/physics.js';
 import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from '../vehicle/bike.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
@@ -417,6 +417,7 @@ export class Game {
       race: this.race,
       lobby: this.lobby,
       nav: this.nav,
+      wheelie: { ...this.car.wheelie, speedOk: this.car.forwardSpeed > WHEELIE.minSpeed, start: WHEELIE.startMeter },
     });
     // nothing to see behind the full-screen map: save the GPU the work
     if (!this.ui.mapOpen) this.renderer.render(this.scene, this.camera);
@@ -652,7 +653,7 @@ export class Game {
       p.qa.set(...a.s.q); p.qb.set(...b.s.q);
       g.quaternion.slerpQuaternions(p.qa, p.qb, t);
       const ud = g.userData;
-      ud.lean.rotation.z = a.s.l + (b.s.l - a.s.l) * t;
+      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, this.car.spec.rearZ);
       ud.steerer.rotation.y = (a.s.st || 0) * 0.25 * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
       p.spin = (p.spin || 0) + (a.s.v / 0.37) * (1 / 60);
       for (const w of ud.wheels) w.rotation.x = p.spin;

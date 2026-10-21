@@ -282,3 +282,14 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 #npVolume { width: 70px; accent-color: var(--accent); padding: 0; border: 0; background: none; }
 #npOpen { font: 800 12px ui-monospace, monospace !important; }
 @media (max-width: 640px) { #nowPlaying { bottom: 110px; max-width: calc(100vw - 24px); } #npVolume { display: none; } }
+
+/* ---------- wheelie meter (under the speedometer) ---------- */
+#wheelie { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; font-size: 11px; }
+#wheelie span { font: 800 10px system-ui; letter-spacing: .14em; color: rgba(255,255,255,.7); }
+#wheelie .wl-bar { width: 110px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; }
+#wheelie .wl-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: background .2s; }
+#wheelie small { min-width: 70px; text-align: left; color: rgba(255,255,255,.65); }
+#wheelie.up .wl-bar i { background: #ff9f43; box-shadow: 0 0 10px #ff9f43; }
+#wheelie.up span { color: #ffb36b; }
+#wheelie.rest .wl-bar i, #wheelie.charging .wl-bar i { background: rgba(255,255,255,.45); }
+#wheelie.slow { opacity: .55; }
