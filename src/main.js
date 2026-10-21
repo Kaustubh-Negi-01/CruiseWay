@@ -1,6 +1,8 @@
 import { Game, QUALITY, presetFor } from './core/game.js';
 import { UI, chips } from './ui/hud.js';
 import { SoundManager, DEFAULT_SOUND } from './audio/sound.js';
+import { Radio } from './radio/radio.js';
+import { RadioPanel } from './ui/radioPanel.js';
 import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
@@ -115,6 +117,7 @@ function enterGame({ net, seed, code, welcome }) {
   ui.setWorldCode(code);
   game.start({ net, seed, name: playerName(), welcome });
   ui.attachWorld(game.world);
+  ui.toast('Press Q for the radio.');
   setupBigMap();
   input.attachTouch($('#hud'));
   if (net.isHost) {
@@ -133,7 +136,7 @@ function enterGame({ net, seed, code, welcome }) {
 // Hidden while riding, like most games. It comes back by itself whenever a
 // menu, the map or a prompt is open, and Alt+C toggles it at any time.
 let cursorForced = false;
-const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt'];
+const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt', '#radio'];
 function updateCursor() {
   const menuOpen = cursorOverlays.some((s) => !$(s).classList.contains('hidden'));
   document.body.classList.toggle('no-cursor', game.running && !menuOpen && !cursorForced);
@@ -146,6 +149,13 @@ input.on('cursor', () => {
 });
 new MutationObserver(updateCursor).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
 input.on('stats', () => ui.toggleStats());
+
+// ---------------------------------------------------------------- radio (Q)
+const radio = new Radio();
+const radioPanel = new RadioPanel(radio);
+radio.setMaster(sound.settings.master);
+radio.on(() => sound.setDuck(radio.playing));
+input.on('radio', () => { if (game.running) radioPanel.toggle(); });
 
 // ---------------------------------------------------------------- in game
 
@@ -164,6 +174,7 @@ const overlays = ['#pause', '#mapOverlay'];
 const closeOverlays = () => { overlays.forEach((s) => $(s).classList.add('hidden')); ui.showSpotCard(null); };
 
 input.on('escape', () => {
+  if (radioPanel.isOpen) { radioPanel.close(); return; }
   if (!game.running) return;
   const anyOpen = overlays.some((s) => !$(s).classList.contains('hidden'));
   closeOverlays();
@@ -194,7 +205,7 @@ new MutationObserver(() => { ui.mapOpen = !$('#mapOverlay').classList.contains('
 $('#clearRoute').onclick = () => { game.clearWaypoint(); ui.toast('Route cleared.'); };
 $('#centerMe').onclick = () => { ui.bigMap.follow = true; ui.bigMap.scale = Math.max(ui.bigMap.scale, 0.35); };
 $('#resumeBtn').onclick = closeOverlays;
-$('#leaveBtn').onclick = () => { game.stop(); location.href = location.pathname; };
+$('#leaveBtn').onclick = () => { radio.stop(); game.stop(); location.href = location.pathname; };
 
 function setupBigMap() {
   ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true });
@@ -230,6 +241,7 @@ qualityHint(quality);
 // sound settings (remembered per device)
 function saveSound(changes) {
   sound.set(changes);
+  if ('master' in changes) radio.setMaster(changes.master);
   store.set('sound', JSON.stringify(sound.settings));
 }
 chips($('[data-opt=music]'), { on: 'On', off: 'Off' }, soundPrefs.musicOn ? 'on' : 'off', (v) => saveSound({ musicOn: v === 'on' }));

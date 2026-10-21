@@ -27,6 +27,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Riding uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
   - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; a calm generative zen soundtrack.
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
+- **Radio (Q):**
+  - Search and play full songs from Audius, or live internet radio stations from radio-browser.info.
+  - Recently played, trending suggestions with genre chips, and a now-playing mini player with play/pause, next and volume.
+  - The zen music fades out while the radio plays.
 - **Controls:** keyboard, gamepad and on-screen touch controls.
 
 | Key | Action |
@@ -36,6 +40,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | R | Reset to road (in a race: last checkpoint) |
 | C | Cycle camera |
 | M | Map |
+| Q | Radio |
 | Enter / Backspace | Accept / dismiss a race prompt |
 | Alt + C | Show / hide the mouse cursor (hidden while riding) |
 | F3 | Performance overlay (FPS, CPU time, draw calls, triangles) |
@@ -108,6 +113,9 @@ src/
     markers.js             start / checkpoint / finish gates and beacon
     barriers.js            holographic race walls + keeping racers inside them
 
+  radio/
+    radio.js               radio: Audius songs + live stations, player, queue, recents
+
   audio/
     sound.js               sound engine: riding sounds, impacts, race chimes, settings
     music.js               generative zen soundtrack
@@ -115,6 +123,7 @@ src/
   ui/
     hud.js                 HUD, prompts, results, performance overlay
     map.js                 satellite map, minimap, GPS drawing
+    radioPanel.js          radio panel (Q) and now-playing mini player
     style.css              all styling
 
   world/
@@ -141,4 +150,5 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 
 ## Credits
 
+- Radio: songs are streamed from [Audius](https://audius.co), where artists upload and share their own music, through its public API. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). Nothing is bundled with the game.
 - Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.
