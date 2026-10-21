@@ -17,14 +17,21 @@ const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0
 const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.1);
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion();
 
-// Graphics presets. 'auto' starts at 1x and lets the resolution scaler trade
-// sharpness for a steady frame rate.
+// Graphics presets, cheapest first. Each one sets render resolution (pr),
+// anti-aliasing, shadow map, whether trees cast shadows, grass density, view
+// distance (chunks) and terrain detail rings (quads per chunk side, near to
+// far). 'fps' caps the frame rate (0 = only the user's cap applies).
+// 'auto' runs Medium and steps down (resolution first, then preset) if the
+// machine can't hold the frame rate. It never renders above native resolution.
 export const QUALITY = {
-  auto:   { label: 'Auto',   maxPR: 1.25, minPR: 0.6,  shadow: 1024, grass: 0.8 },
-  high:   { label: 'High',   maxPR: 1.5,  minPR: 1.5,  shadow: 2048, grass: 1.0 },
-  medium: { label: 'Medium', maxPR: 1.0,  minPR: 1.0,  shadow: 1024, grass: 0.7 },
-  low:    { label: 'Low',    maxPR: 0.75, minPR: 0.75, shadow: 0,    grass: 0.4 },
+  auto:   { label: 'Auto' },
+  eco:    { label: 'Eco',    pr: 0.7,  msaa: false, fps: 30, shadow: 0,    treeShadows: false, grass: 0.3,  view: 4.5, rings: [64, 32, 16, 8] },
+  low:    { label: 'Low',    pr: 0.85, msaa: false, fps: 0,  shadow: 1024, treeShadows: false, grass: 0.45, view: 5,   rings: [64, 32, 16, 8] },
+  medium: { label: 'Medium', pr: 1.0,  msaa: true,  fps: 0,  shadow: 1024, treeShadows: false, grass: 0.6,  view: 6,   rings: [96, 48, 24, 12] },
+  high:   { label: 'High',   pr: 1.5,  msaa: true,  fps: 0,  shadow: 2048, treeShadows: true,  grass: 1.0,  view: 7.5, rings: [128, 64, 32, 16] },
 };
+const AUTO_STEPS = ['medium', 'low', 'eco'];
+export const presetFor = (name) => QUALITY[name === 'auto' || !QUALITY[name] ? 'medium' : name];
 const FINISH_GRACE = 60;    // seconds others get after the winner crosses
 
 // Game owns the 3D scene, the local bike, the ghosts, navigation, and the
@@ -33,18 +40,24 @@ const FINISH_GRACE = 60;    // seconds others get after the winner crosses
 // (sendAll), and every message to the host is handled locally when we are
 // the host (toHost).
 export class Game {
-  constructor(canvas, ui, input) {
+  constructor(canvas, ui, input, { msaa = true, quality = 'auto', fpsCap = 60 } = {}) {
     this.ui = ui;
     this.input = input;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // anti-aliasing can only be chosen when the GL context is created
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: msaa, powerPreference: 'high-performance' });
+    this.msaa = msaa;
     this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.quality = 'auto';
+    this.quality = quality;
+    this.autoStep = 0;          // index into AUTO_STEPS while on 'auto'
+    this.fpsCap = fpsCap;       // user's cap: 30, 60 or 0 (max)
     this.pr = 1;
     this.frameAvg = 1 / 60;
     this.drsAt = 0;
-    this.prCeiling = 9;
+    this.slowSince = 0;
+    this.lastTick = 0;
+    this.stats = { fps: 60, cpu: 0, frames: 0, t0: performance.now(), cpuSum: 0 };
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.08, 9000);
@@ -92,12 +105,21 @@ export class Game {
 
   // ---- graphics quality -------------------------------------------------------
 
-  applyQuality(name) {
-    const q = QUALITY[name] || QUALITY.auto;
+  // The preset actually in force (auto resolves to its current step).
+  activePreset() {
+    return this.quality === 'auto' ? QUALITY[AUTO_STEPS[this.autoStep]] : presetFor(this.quality);
+  }
+
+  applyQuality(name, keepAutoStep = false) {
     this.quality = QUALITY[name] ? name : 'auto';
-    this.pr = this.quality === 'auto' ? 1 : q.maxPR;
-    this.prCeiling = q.maxPR;
+    if (!keepAutoStep) this.autoStep = 0;
+    const q = this.activePreset();
+    const native = Math.min(devicePixelRatio || 1, 2);
+    // never render more pixels than the screen has (except High on HiDPI)
+    this.pr = Math.min(q.pr, this.quality === 'high' ? native : Math.min(1, native));
+    this.prTop = this.pr;
     this.drsAt = performance.now();
+    this.slowSince = 0;
     this.renderer.setPixelRatio(this.pr);
     this.resize();
     if (!this.env) return;
@@ -108,26 +130,68 @@ export class Game {
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
-    this.world.setGrassDensity(q.grass);
+    this.world.setDetail({ view: q.view, rings: q.rings, treeShadows: q.treeShadows, grass: q.grass });
   }
 
-  // Dynamic resolution: if frames run long, render fewer pixels; creep back
-  // up while there is headroom. It remembers the level that was too much so
-  // it doesn't hunt up and down.
+  // Milliseconds between frames we allow (0 = every display refresh).
+  frameInterval() {
+    const caps = [this.fpsCap, this.activePreset().fps].filter((c) => c > 0);
+    return caps.length ? 1000 / Math.min(...caps) : 0;
+  }
+
+  // Auto: if frames take too long, drop resolution (down to 0.6x); if that's
+  // not enough, step down a preset (Medium -> Low -> Eco). Creeps resolution
+  // back up slowly when there's headroom, never above the preset's own.
   adaptResolution(dt, now) {
     if (this.quality !== 'auto' || document.hidden) return;
-    const q = QUALITY.auto;
     this.frameAvg += (dt - this.frameAvg) * 0.05;
-    if (now - this.drsAt < 1200) return;
-    if (this.frameAvg > 1 / 50 && this.pr > q.minPR) {
-      this.prCeiling = Math.max(q.minPR, this.pr - 0.05);
-      this.pr = Math.max(q.minPR, this.pr - 0.1);
-    } else if (this.frameAvg < 1 / 58 && this.pr < Math.min(q.maxPR, this.prCeiling) && now - this.drsAt > 6000) {
-      this.pr = Math.min(q.maxPR, this.prCeiling, this.pr + 0.05);
-    } else return;
+    if (now - this.drsAt < 1500) return;
+    const target = (this.frameInterval() || 1000 / 60) / 1000;
+    const slow = this.frameAvg > target * 1.2;
+    if (slow) {
+      if (this.pr > 0.62) {
+        this.pr = Math.max(0.6, this.pr - 0.1);
+      } else if (this.autoStep < AUTO_STEPS.length - 1) {
+        if (!this.slowSince) this.slowSince = now;
+        if (now - this.slowSince < 4000) return;
+        this.autoStep++;
+        this.applyQuality('auto', true);
+        this.ui.toast('Graphics lowered to keep things smooth (' + QUALITY[AUTO_STEPS[this.autoStep]].label + ').');
+        return;
+      } else return;
+    } else if (this.frameAvg < target * 1.05 && this.pr < this.prTop && now - this.drsAt > 8000) {
+      this.pr = Math.min(this.prTop, this.pr + 0.05);
+      this.slowSince = 0;
+    } else {
+      if (!slow) this.slowSince = 0;
+      return;
+    }
     this.drsAt = now;
     this.renderer.setPixelRatio(this.pr);
     this.resize();
+  }
+
+  // Frame cap + bookkeeping shared by the menu preview and the game loop.
+  // Returns false when this display refresh should be skipped.
+  tick(interval) {
+    const now = performance.now();
+    if (interval && now - this.lastTick < interval - 3) return false;
+    this.lastTick = now;
+    return true;
+  }
+
+  noteStats(cpuMs) {
+    const st = this.stats;
+    st.frames++;
+    st.cpuSum += cpuMs;
+    const now = performance.now();
+    if (now - st.t0 >= 500) {
+      st.fps = (st.frames * 1000) / (now - st.t0);
+      st.cpu = st.cpuSum / st.frames;
+      st.frames = 0; st.cpuSum = 0; st.t0 = now;
+      const info = this.renderer.info.render;
+      this.ui.stats?.({ fps: st.fps, cpu: st.cpu, calls: info.calls, tris: info.triangles, pr: this.pr, preset: this.quality === 'auto' ? 'Auto · ' + this.activePreset().label : this.activePreset().label, cap: this.frameInterval() ? Math.round(1000 / this.frameInterval()) : 'max' });
+    }
   }
 
   disposeWorld() {
@@ -180,6 +244,7 @@ export class Game {
     const loop = () => {
       if (!this.previewing) return;
       this.raf = requestAnimationFrame(loop);
+      if (!this.tick(1000 / 30)) return;
       const now = performance.now();
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
@@ -258,6 +323,7 @@ export class Game {
     const loop = () => {
       if (!this.running) return;
       this.raf = requestAnimationFrame(loop);
+      if (!this.tick(this.frameInterval())) return;
       this.frame();
     };
     loop();
@@ -305,6 +371,7 @@ export class Game {
 
   frame() {
     const now = performance.now();
+    const cpu0 = now;
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
 
@@ -335,7 +402,9 @@ export class Game {
       lobby: this.lobby,
       nav: this.nav,
     });
-    this.renderer.render(this.scene, this.camera);
+    // nothing to see behind the full-screen map: save the GPU the work
+    if (!this.ui.mapOpen) this.renderer.render(this.scene, this.camera);
+    this.noteStats(performance.now() - cpu0);
   }
 
   // Riding into the sea or a lake: you're slowed right down, and if you stay

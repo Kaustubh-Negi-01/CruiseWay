@@ -85,6 +85,7 @@
     <div id="standings" class="hidden"></div>
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div></div>
     <div id="countdown"></div>
+    <div id="stats" class="hidden"></div>
     <div id="flash"></div>
     <div id="toasts"></div>
     <div id="touch">
@@ -123,12 +124,15 @@
       <h2>Paused <small>(the world keeps going for everyone else)</small></h2>
       <div class="opt"><span>Graphics</span><div class="chips" data-opt="quality"></div></div>
       <p class="hint" id="qualityHint"></p>
+      <div class="opt"><span>Frame rate</span><div class="chips" data-opt="fps"></div></div>
       <ul class="keys">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — ride</li>
         <li><kbd>Space</kbd> — rear brake (slide)</li>
         <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
         <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
         <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
+        <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>
+        <li><kbd>F3</kbd> — performance overlay (FPS, load)</li>
         <li>Gamepad: stick steer · RT/LT gas/brake · A handbrake · Y reset · B camera</li>
       </ul>
       <div class="row">
