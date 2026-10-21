@@ -29,10 +29,6 @@
       </div>
 
       <div id="create" class="pane hidden">
-        <div class="opt"><span>Landscape</span><div class="chips" data-opt="biome"></div></div>
-        <div class="opt"><span>Time of day</span><div class="chips" data-opt="time"></div></div>
-        <div class="opt"><span>Weather</span><div class="chips" data-opt="weather"></div></div>
-        <div class="opt"><span>Your ride</span><div class="chips" data-opt="vehicle"></div></div>
         <label class="field">
           <span>World seed <em>(optional — same seed, same roads)</em></span>
           <input id="seed" maxlength="32" placeholder="random" autocomplete="off" />
@@ -48,7 +44,6 @@
           <span>World code</span>
           <input id="code" class="code-input" maxlength="5" placeholder="ABCDE" autocomplete="off" />
         </label>
-        <div class="opt"><span>Your ride</span><div class="chips" data-opt="vehicle"></div></div>
         <div class="row">
           <button class="btn" data-go="home">Back</button>
           <button class="btn primary" id="doJoin">Join</button>
@@ -57,7 +52,7 @@
 
       <p id="status" class="status"></p>
     </div>
-    <p class="foot">WASD / arrows to drive · Space handbrake · R reset · C camera · M map · Esc menu</p>
+    <p class="foot">WASD / arrows to ride · Space rear brake · R reset · C camera · M map · Esc menu</p>
   </div>
 
   <!-- ===== In-game HUD ===== -->
@@ -76,7 +71,7 @@
     <canvas id="minimap" width="200" height="200"></canvas>
     <div id="raceBar" class="hidden"></div>
     <div id="standings" class="hidden"></div>
-    <div class="speedo"><span id="speed">0</span><small>km/h</small><em id="surface"></em></div>
+    <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div></div>
     <div id="countdown"></div>
     <div id="flash"></div>
     <div id="toasts"></div>
@@ -120,7 +115,6 @@
         <button class="btn small" data-quick="10000">From me · 10 km</button>
         <button class="btn small" id="clearPicks">Clear</button>
       </div>
-      <div class="opt"><span>Everyone rides</span><div class="chips" data-opt="raceVehicle"></div></div>
       <div class="opt"><span>Checkpoints</span><div class="chips" data-opt="spacing"></div></div>
       <p id="setupSummary" class="summary"></p>
       <div class="row">
@@ -140,7 +134,6 @@
   <div id="pause" class="modal hidden">
     <div class="card">
       <h2>Paused <small>(the world keeps going for everyone else)</small></h2>
-      <div class="opt"><span>Your ride</span><div class="chips" data-opt="pauseVehicle"></div></div>
       <ul class="keys">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — drive</li>
         <li><kbd>Space</kbd> — handbrake (drift)</li>

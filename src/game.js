@@ -1,12 +1,10 @@
 import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Environment } from './world/sky.js';
-import { TIMES } from './world/settings.js';
-import { Vehicle } from './physics.js';
-import { buildVehicleModel, ghostify, disposeModel, VEHICLES } from './vehicles.js';
+import { Bike } from './physics.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS } from './bike.js';
 import { RaceMarkers } from './markers.js';
 
-const COLORS = ['#e8483b', '#2f8cf0', '#f2b21b', '#3fc46a', '#b05ce8', '#f07ab8'];
 const SEND_HZ = 15;
 const INTERP_DELAY = 140; // ms behind newest snapshot when rendering ghosts
 const CP_RADIUS = 20;
@@ -25,14 +23,77 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.camera = new THREE.PerspectiveCamera(65, 1, 0.3, 3000);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 6000);
     this.camMode = 0;
     this.running = false;
+    this.previewing = false;
     addEventListener('resize', () => this.resize());
     this.resize();
 
     input.on('reset', (d) => d && this.running && this.resetCar());
     input.on('camera', (d) => { if (d) this.camMode = (this.camMode + 1) % 3; });
+  }
+
+  // Build (or reuse) the world for a seed: scene, terrain, sky, the bike.
+  loadWorld(seed, color = COLORS[0]) {
+    if (this.world && this.world.seed === seed) {
+      this.setModel(color);
+      return;
+    }
+    this.disposeWorld();
+    const scene = (this.scene = new THREE.Scene());
+    this.world = new World(scene, seed);
+    this.env = new Environment(scene);
+    this.car = new Bike(this.world);
+    this.setModel(color);
+    this.placeOnRoad(0, 1);
+    this.camPos = null;
+  }
+
+  disposeWorld() {
+    if (!this.world) return;
+    this.markers?.dispose();
+    this.markers = null;
+    if (this.model) { this.scene.remove(this.model); disposeModel(this.model); this.model = null; }
+    this.world.dispose();
+    this.env.dispose();
+    this.world = null;
+    this.renderer.renderLists.dispose();
+  }
+
+  // Slow cinematic orbit behind the main menu.
+  preview(seed) {
+    this.loadWorld(seed);
+    this.previewing = true;
+    this.last = performance.now();
+    this.orbit = 0;
+    const loop = () => {
+      if (!this.previewing) return;
+      this.raf = requestAnimationFrame(loop);
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - this.last) / 1000);
+      this.last = now;
+      this.orbit += dt * 0.06;
+      const c = this.car;
+      const fwd = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
+      const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      const cam = c.pos.clone()
+        .addScaledVector(fwd, Math.cos(this.orbit) * 7 - 2)
+        .addScaledVector(side, Math.sin(this.orbit) * 7)
+        .add(new THREE.Vector3(0, 1.6, 0));
+      cam.y = Math.max(cam.y, this.world.heightAt(cam.x, cam.z) + 0.8);
+      this.camera.position.copy(cam);
+      this.camera.lookAt(c.pos.clone().addScaledVector(fwd, 30).add(new THREE.Vector3(0, 2.5, 0)));
+      this.car.update(dt, { steer: 0, throttle: 0, brake: 0, handbrake: false });
+      this.car.applyTo(this.model);
+      this.world.update(this.car.pos);
+      this.env.update(dt, this.car.pos);
+      this.renderer.render(this.scene, this.camera);
+    };
+    cancelAnimationFrame(this.raf);
+    loop();
   }
 
   resize() {
@@ -44,30 +105,28 @@ export class Game {
 
   // ---- lifecycle ----------------------------------------------------------
 
-  start({ net, settings, name, vehicle, welcome }) {
+  start({ net, seed, name, welcome }) {
+    this.previewing = false;
+    cancelAnimationFrame(this.raf);
     this.net = net;
     this.isHost = net.isHost;
-    this.settings = settings;
+    this.seed = seed;
     this.name = name;
-    this.myVehicle = vehicle;
     this.selfId = this.isHost ? net.id : welcome.you;
     this.hostId = this.isHost ? net.id : welcome.hostId;
-    this.players = new Map(); // id -> { id, name, color, wins, ghost, buf, veh }
+    this.players = new Map(); // id -> { id, name, color, wins, ghost, buf }
     this.race = null;         // client-side race view
     this.hostRace = null;     // host-only authoritative race
     this.latest = new Map();  // host: id -> latest snapshot
 
-    const scene = (this.scene = new THREE.Scene());
-    this.world = new World(scene, settings);
-    this.env = new Environment(scene, settings);
-
-    this.car = new Vehicle(this.world, vehicle);
-    this.setModel(vehicle);
+    const myColor = this.isHost ? COLORS[0] : (welcome.roster.find((p) => p.id === welcome.you)?.color || COLORS[1]);
+    this.loadWorld(seed, myColor);
 
     // spawn: host at the origin, guests just behind the host
     const s = welcome?.spawnS != null ? welcome.spawnS - 25 : 0;
     this.placeOnRoad(s, 1);
     this.camPos = null;
+    this.car.odometer = 0;
 
     if (this.isHost) {
       this.players.set(this.selfId, { id: this.selfId, name, color: COLORS[0], wins: 0 });
@@ -117,25 +176,16 @@ export class Game {
     cancelAnimationFrame(this.raf);
     if (this.isHost) this.net.broadcast({ t: 'bye' });
     this.net?.close();
-    this.markers?.dispose();
     for (const p of this.players.values()) this.removeGhost(p);
-    if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
-    this.world?.dispose();
-    this.env?.dispose();
-    this.renderer.renderLists.dispose();
+    this.disposeWorld();
   }
 
-  setModel(type) {
+  setModel(color) {
+    if (this.model && this.modelColor === color) return;
     if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
-    this.model = buildVehicleModel(type, 0xd9483b);
+    this.model = buildBike(color);
+    this.modelColor = color;
     this.scene.add(this.model);
-    this.car.setType(type);
-    if (TIMES[this.settings.time].night || this.settings.weather === 'fog') {
-      const light = new THREE.SpotLight(0xfff1d6, 60, 120, 0.55, 0.5, 1.2);
-      light.position.set(0, 1.2, 1.5);
-      light.target.position.set(0, 0, 25);
-      this.model.add(light, light.target);
-    }
   }
 
   placeOnRoad(s, dir) {
@@ -157,12 +207,6 @@ export class Game {
     this.placeOnRoad(n.s, fwd >= 0 ? 1 : -1);
   }
 
-  changeVehicle(type) {
-    this.myVehicle = type;
-    if (this.race?.participant) return; // locked during a race
-    this.setModel(type);
-  }
-
   // ---- frame ----------------------------------------------------------------
 
   frame() {
@@ -182,6 +226,7 @@ export class Game {
 
     this.ui.hud({
       speed: Math.abs(this.car.forwardSpeed) * 3.6,
+      odometer: this.car.odometer,
       onRoad: this.car.onRoad,
       me: this.car.pos, yaw: this.car.yaw,
       others: [...this.players.values()].filter((p) => p.ghost).map((p) => ({ x: p.ghost.position.x, z: p.ghost.position.z, color: p.color, name: p.name })),
@@ -193,25 +238,35 @@ export class Game {
 
   updateCamera(dt) {
     const c = this.car, s = c.spec;
-    const fwd = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
+    // the chase camera swings round lazily, so turns read as the bike leaning in
+    if (this.camYaw == null || this.camPos == null) this.camYaw = c.yaw;
+    let dy = c.yaw - this.camYaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    this.camYaw += dy * (1 - Math.exp(-dt * 3.2));
+    const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
+    const bodyPos = new THREE.Vector3(c.pos.x, c.bodyY, c.pos.z);
     let want, look;
     if (this.camMode === 2) {
-      const h = c.type === 'bus' ? 3.2 : c.type === 'bike' ? 1.9 : 1.35;
-      want = c.pos.clone().addScaledVector(fwd, c.type === 'bus' ? 4.5 : 0.3).add(new THREE.Vector3(0, h, 0));
-      look = want.clone().addScaledVector(fwd, 20);
+      const head = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
+      want = bodyPos.clone().addScaledVector(head, 0.35).add(new THREE.Vector3(0, 1.55, 0));
+      look = want.clone().addScaledVector(head, 20).add(new THREE.Vector3(0, -1.2, 0));
       this.camPos = want.clone();
     } else {
-      const far = this.camMode === 1 ? 1.7 : 1;
-      want = c.pos.clone().addScaledVector(fwd, -s.camDist * far).add(new THREE.Vector3(0, s.camHeight * far, 0));
-      look = c.pos.clone().addScaledVector(fwd, 4).add(new THREE.Vector3(0, 1.2, 0));
+      const far = this.camMode === 1 ? 1.8 : 1;
+      want = bodyPos.clone().addScaledVector(fwd, -s.camDist * far).add(new THREE.Vector3(0, s.camHeight * far, 0));
+      look = bodyPos.clone().addScaledVector(fwd, 6).add(new THREE.Vector3(0, 1.1, 0));
       if (!this.camPos) this.camPos = want.clone();
-      this.camPos.lerp(want, 1 - Math.exp(-dt * 6));
-      const g = this.world.heightAt(this.camPos.x, this.camPos.z) + 1;
+      // stay locked at a fixed distance (the yaw lag above gives the swing);
+      // only height is smoothed so bumps don't jolt the view
+      this.camPos.x = want.x;
+      this.camPos.z = want.z;
+      this.camPos.y += (want.y - this.camPos.y) * (1 - Math.exp(-dt * 8));
+      const g = this.world.heightAt(this.camPos.x, this.camPos.z) + 0.6;
       if (this.camPos.y < g) this.camPos.y = g;
     }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(look);
-    const targetFov = 65 + Math.min(14, Math.abs(c.forwardSpeed) * 0.22);
+    const targetFov = 68 + Math.min(16, Math.abs(c.forwardSpeed) * 0.3);
     this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.updateProjectionMatrix();
   }
@@ -222,8 +277,7 @@ export class Game {
     const renderT = now - INTERP_DELAY;
     for (const p of this.players.values()) {
       if (p.id === this.selfId || !p.buf || p.buf.length === 0) continue;
-      const veh = p.buf[p.buf.length - 1].s.veh;
-      if (!p.ghost || p.veh !== veh) this.makeGhost(p, veh);
+      if (!p.ghost) this.makeGhost(p);
       const buf = p.buf;
       let a = buf[0], b = buf[0];
       for (let i = buf.length - 1; i >= 0; i--) {
@@ -239,20 +293,20 @@ export class Game {
       p.qa.set(...a.s.q); p.qb.set(...b.s.q);
       g.quaternion.slerpQuaternions(p.qa, p.qb, t);
       const ud = g.userData;
-      if (ud.body) ud.body.rotation.z = a.s.l + (b.s.l - a.s.l) * t;
-      p.spin = (p.spin || 0) + (a.s.v / 0.4) * (1 / 60);
+      ud.lean.rotation.z = a.s.l + (b.s.l - a.s.l) * t;
+      ud.steerer.rotation.y = (a.s.st || 0) * 0.25 * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
+      p.spin = (p.spin || 0) + (a.s.v / 0.31) * (1 / 60);
       for (const w of ud.wheels) w.rotation.x = p.spin;
       // drop old snapshots
       while (buf.length > 2 && buf[1].t < renderT) buf.shift();
     }
   }
 
-  makeGhost(p, veh) {
+  makeGhost(p) {
     this.removeGhost(p);
-    p.veh = veh;
-    const g = ghostify(buildVehicleModel(veh, p.color), p.color);
+    const g = ghostify(buildBike(p.color));
     const tag = nameSprite(p.name, p.color);
-    tag.position.y = veh === 'bus' ? 4.6 : 2.8;
+    tag.position.y = 2.3;
     g.add(tag);
     p.ghost = g;
     p.qa = new THREE.Quaternion();
@@ -304,7 +358,7 @@ export class Game {
         const hr = this.hostRace;
         const nearest = this.world.road.nearestAnywhere(this.car.pos.x, this.car.pos.z);
         this.net.sendTo(from, {
-          t: 'welcome', you: from, hostId: this.selfId, settings: this.settings,
+          t: 'welcome', you: from, hostId: this.selfId, seed: this.seed,
           roster: this.rosterList(), spawnS: nearest.s,
           race: hr && hr.phase !== 'invite' ? { ...hr.pub, participants: hr.participants } : null,
         });
@@ -378,15 +432,15 @@ export class Game {
     }
   }
 
-  // Host picked start/finish/vehicle in the race setup panel.
-  createRace({ s0, s1, vehicle, spacing }) {
+  // Host picked start/finish in the race setup panel.
+  createRace({ s0, s1, spacing }) {
     if (this.hostRace) return;
     const dir = s1 >= s0 ? 1 : -1;
     const len = Math.abs(s1 - s0);
     const cps = [];
     const count = Math.max(0, Math.round(len / spacing) - 1);
     for (let i = 1; i <= count; i++) cps.push(s0 + (dir * len * i) / (count + 1));
-    const pub = { id: Math.random().toString(36).slice(2, 8), s0, s1, vehicle, cps, length: len };
+    const pub = { id: Math.random().toString(36).slice(2, 8), s0, s1, cps, length: len };
     this.hostRace = {
       pub, phase: 'invite', replies: new Map([[this.selfId, true]]),
       participants: [], ready: new Set(), progress: new Map(), times: new Map(),
@@ -528,10 +582,9 @@ export class Game {
     this.markers = new RaceMarkers(this.scene, this.world, pub);
     if (participant) {
       this.markers.setTarget(1);
-      this.setModel(pub.vehicle);
       this.placeOnRoad(pub.s0 - dir * 6, dir);
       this.car.frozen = true;
-      this.ui.toast(`Race! ${VEHICLES[pub.vehicle].label} · ${(pub.length / 1000).toFixed(1)} km`);
+      this.ui.toast(`Race! ${(pub.length / 1000).toFixed(1)} km — get ready`);
       // give the renderer a frame to build the start area, then report ready
       setTimeout(() => this.toHost({ t: 'race_ready', id: pub.id }), 600);
     } else {
@@ -590,7 +643,6 @@ export class Game {
     this.car.frozen = false;
     this.ui.countdown(null);
     this.ui.raceStandings(null);
-    if (r && r.participant && this.car.type !== this.myVehicle) this.setModel(this.myVehicle);
     if (msg.cancelled) this.ui.toast('The host ended the race.');
     else if (msg.standings.length) this.ui.results(this.namedStandings(msg.standings), msg.winner === this.selfId);
   }

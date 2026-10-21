@@ -3,11 +3,8 @@ import { UI, chips } from './ui.js';
 import { Input } from './input.js';
 import { Net, normalizeCode } from './net.js';
 import { MapView } from './map.js';
-import { BIOMES, TIMES, WEATHER, sanitizeSettings } from './world/settings.js';
-import { VEHICLES } from './vehicles.js';
 
 const $ = (s) => document.querySelector(s);
-const labels = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v.label]));
 const store = {
   get(k, d) { try { return localStorage.getItem('convoy:' + k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('convoy:' + k, v); } catch { /* private mode */ } },
@@ -20,20 +17,13 @@ const game = new Game($('#view'), ui, input);
 // ---------------------------------------------------------------- menu
 
 $('#name').value = store.get('name', '');
-const pick = {
-  biome: chips($('#create [data-opt=biome]'), labels(BIOMES), 'meadow'),
-  time: chips($('#create [data-opt=time]'), labels(TIMES), 'day'),
-  weather: chips($('#create [data-opt=weather]'), labels(WEATHER), 'clear'),
-};
-let myVehicle = store.get('vehicle', 'car');
-if (!VEHICLES[myVehicle]) myVehicle = 'car';
-const vehiclePickers = [...document.querySelectorAll('[data-opt=vehicle], [data-opt=pauseVehicle]')].map((el) =>
-  chips(el, labels(VEHICLES), myVehicle, (v) => {
-    myVehicle = v;
-    store.set('vehicle', v);
-    vehiclePickers.forEach((p) => p.set(v));
-    if (game.running) game.changeVehicle(v);
-  }));
+
+// The menu sits over a live view of a fresh world. Creating a world with an
+// empty seed field keeps this exact place, so there's nothing to reload.
+const randomSeed = () => Math.random().toString(36).slice(2, 10);
+const sanitizeSeed = (s) => String(s || '').trim().slice(0, 32) || randomSeed();
+const previewSeed = randomSeed();
+game.preview(previewSeed);
 
 const show = (pane) => {
   for (const id of ['home', 'create', 'join']) $('#' + id).classList.toggle('hidden', id !== pane);
@@ -64,13 +54,11 @@ $('#doCreate').onclick = async () => {
   if (busy) return;
   busy = true;
   status('Creating world…');
-  const settings = sanitizeSettings({
-    seed: $('#seed').value.trim(), biome: pick.biome.get(), time: pick.time.get(), weather: pick.weather.get(),
-  });
+  const seed = $('#seed').value.trim() ? sanitizeSeed($('#seed').value) : previewSeed;
   const net = new Net();
   try {
     const code = await net.host();
-    enterGame({ net, settings, code });
+    enterGame({ net, seed, code });
   } catch (e) {
     status(e.message, true);
   } finally {
@@ -95,7 +83,7 @@ $('#doJoin').onclick = async () => {
       });
       net.send({ t: 'hello', name: playerName() });
     });
-    enterGame({ net, settings: sanitizeSettings(welcome.settings), code, welcome });
+    enterGame({ net, seed: sanitizeSeed(welcome.seed), code, welcome });
   } catch (e) {
     net.close();
     status(e.message, true);
@@ -105,11 +93,11 @@ $('#doJoin').onclick = async () => {
 };
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#doJoin').click(); });
 
-function enterGame({ net, settings, code, welcome }) {
+function enterGame({ net, seed, code, welcome }) {
   $('#menu').classList.add('hidden');
   $('#hud').classList.remove('hidden');
   ui.setWorldCode(code);
-  game.start({ net, settings, name: playerName(), vehicle: myVehicle, welcome });
+  game.start({ net, seed, name: playerName(), welcome });
   ui.attachWorld(game.world);
   ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true });
   input.attachTouch($('#hud'));
@@ -157,7 +145,6 @@ $('#mapOverlay').addEventListener('pointerdown', (e) => { if (e.target.id === 'm
 
 let setupMap = null;
 const picks = { s0: null, s1: null };
-const raceVehicle = chips($('[data-opt=raceVehicle]'), labels(VEHICLES), 'car');
 const spacing = chips($('[data-opt=spacing]'), { 400: 'Every 400 m', 800: 'Every 800 m', 1500: 'Every 1.5 km', 100000: 'Finish only' }, '800', refreshSetup);
 
 function refreshSetup() {
@@ -213,7 +200,7 @@ $('#clearPicks').onclick = () => { picks.s0 = picks.s1 = null; refreshSetup(); }
 $('#setupCancel').onclick = closeOverlays;
 $('#setupSend').onclick = () => {
   closeOverlays();
-  game.createRace({ s0: picks.s0, s1: picks.s1, vehicle: raceVehicle.get(), spacing: Number(spacing.get()) });
+  game.createRace({ s0: picks.s0, s1: picks.s1, spacing: Number(spacing.get()) });
 };
 $('#endRaceBtn').onclick = () => game.endRace(true);
 

@@ -51,6 +51,7 @@ export class UI {
 
   hud(s) {
     $('#speed').textContent = Math.round(s.speed);
+    $('#odo').textContent = (s.odometer / 1000).toFixed(1);
     $('#surface').textContent = s.onRoad ? '' : 'off-road';
     this.hudTick++;
     if (this.minimap && this.hudTick % 4 === 0) {
@@ -108,9 +109,8 @@ export class UI {
 
   invite(msg, reply) {
     const r = msg.race;
-    const veh = { car: 'a car', bike: 'motorbikes', bus: 'buses' }[r.vehicle];
     $('#inviteText').innerHTML = `<b>${esc(msg.host)}</b> wants to race: <b>${(r.length / 1000).toFixed(1)} km</b> with
-      ${r.cps.length} checkpoint${r.cps.length === 1 ? '' : 's'}, everyone on <b>${veh}</b>. You'll be moved to the start line.`;
+      ${r.cps.length} checkpoint${r.cps.length === 1 ? '' : 's'}. You'll be moved to the start line.`;
     $('#invite').classList.remove('hidden');
     const bar = $('#inviteTimer');
     const start = performance.now();

@@ -48,8 +48,8 @@ input:focus { border-color: var(--accent); }
 .chips button.on { background: var(--ink); color: #111; border-color: transparent; }
 
 /* ---------- menu ---------- */
-.screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
-  background: radial-gradient(ellipse at 50% 120%, rgba(232,196,74,0.18), transparent 60%), linear-gradient(180deg, rgba(8,10,14,0.35), rgba(8,10,14,0.8)); }
+.screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 2;
+  background: linear-gradient(90deg, rgba(10,8,12,0.55), rgba(10,8,12,0.1) 70%); place-items: center start; padding-left: max(16px, 6vw); }
 .menu-card { width: min(480px, 100%); background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line);
   border-radius: 22px; padding: 28px 26px; max-height: calc(100vh - 80px); overflow: auto; }
 .logo { margin: 0; font: 900 52px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .18em; }
@@ -77,10 +77,6 @@ input:focus { border-color: var(--accent); }
 #inviteStatus { background: var(--panel); border-radius: 10px; font-size: 13px; padding: 0; }
 #inviteStatus:not(:empty) { padding: 8px 12px; }
 #minimap { position: absolute; top: 14px; right: 14px; width: 200px; height: 200px; border-radius: 50%; border: 2px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
-.speedo { position: absolute; right: 22px; bottom: 18px; text-align: right; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
-.speedo span { font: 800 54px/1 ui-sans-serif, system-ui; font-variant-numeric: tabular-nums; }
-.speedo small { display: block; color: var(--muted); font-size: 13px; letter-spacing: .1em; }
-.speedo em { display: block; font-style: normal; font-size: 12px; color: #d9a46a; min-height: 1em; }
 #raceBar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 10px 18px; display: flex; gap: 22px; align-items: baseline; backdrop-filter: blur(8px); white-space: nowrap; }
 #raceBar b { font: 800 26px ui-monospace, monospace; font-variant-numeric: tabular-nums; }
@@ -141,3 +137,10 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
   .tl { max-width: 190px; }
   #roster { min-width: 160px; }
 }
+.speedo { position: absolute; right: 24px; bottom: 20px; text-align: right; text-shadow: 0 2px 14px rgba(0,0,0,.45); }
+.speedo .dial { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; }
+.speedo .dial span { font: 300 64px/1 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.speedo .dial small { font: 600 12px system-ui; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.75); }
+.speedo .trip { margin-top: 2px; font-size: 13px; color: rgba(255,255,255,.8); }
+.speedo .trip b { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.speedo em { display: block; font-style: normal; font-size: 12px; color: #f0c48a; min-height: 1em; margin-top: 2px; }
