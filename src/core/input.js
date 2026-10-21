@@ -1,7 +1,7 @@
 // Keyboard, gamepad and touch merged into one driving input.
 //   W/↑ throttle · S/↓ brake/reverse · A/D ←/→ steer · Space handbrake
 //   R reset · C camera · M map · Tab players
-//   Alt+C show/hide the mouse cursor · F3 performance overlay · Q radio
+//   Shift wheelie · Alt+C show/hide the mouse cursor · F3 performance overlay · Q radio
 // Gamepad: left stick steer, RT throttle, LT brake, A handbrake, Y reset, B camera.
 
 export class Input {
@@ -39,13 +39,14 @@ export class Input {
 
   read() {
     const k = this.keys;
-    let steer = 0, throttle = 0, brake = 0, handbrake = false;
+    let steer = 0, throttle = 0, brake = 0, handbrake = false, wheelie = false;
     if (this.enabled) {
       if (k.has('KeyA') || k.has('ArrowLeft')) steer += 1;
       if (k.has('KeyD') || k.has('ArrowRight')) steer -= 1;
       if (k.has('KeyW') || k.has('ArrowUp')) throttle = 1;
       if (k.has('KeyS') || k.has('ArrowDown')) brake = 1;
       handbrake = k.has('Space');
+      wheelie = k.has('ShiftLeft') || k.has('ShiftRight');
 
       steer += this.touch.steer;
       throttle = Math.max(throttle, this.touch.throttle);
@@ -58,6 +59,7 @@ export class Input {
         throttle = Math.max(throttle, pad.buttons[7]?.value || 0);
         brake = Math.max(brake, pad.buttons[6]?.value || 0);
         handbrake = handbrake || !!pad.buttons[0]?.pressed;
+        wheelie = wheelie || !!pad.buttons[2]?.pressed;
         const edge = (i, action) => {
           const p = !!pad.buttons[i]?.pressed;
           if (p && !this.padPrev[i]) this.fire(action, true);
@@ -68,7 +70,7 @@ export class Input {
         edge(8, 'map');
       }
     }
-    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake };
+    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, wheelie };
   }
 
   // On-screen controls for phones / tablets.

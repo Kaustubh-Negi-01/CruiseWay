@@ -69,6 +69,7 @@ export class UI {
     this.hudTick++;
     // text only changes a few times a second; touching the DOM every frame
     // costs layout work for nothing
+    if (s.wheelie) this.wheelieMeter(s.wheelie);
     if (this.hudTick % 3 === 0) {
       setText('#speed', Math.round(s.speed));
       setText('#odo', (s.odometer / 1000).toFixed(1));
@@ -208,6 +209,19 @@ export class UI {
     $('#guideText').textContent = label;
     $('#guideArrow').style.transform = 'rotate(' + ((-rel * 180) / Math.PI) + 'deg)';
     el.classList.remove('hidden');
+  }
+
+  // Wheelie bar: ready / up (draining) / resting / recharging / too slow.
+  wheelieMeter(w) {
+    const el = this.wheelieEl || (this.wheelieEl = document.getElementById('wheelie'));
+    const fill = this.wheelieFill || (this.wheelieFill = el.querySelector('i'));
+    fill.style.transform = 'scaleX(' + w.meter.toFixed(3) + ')';
+    const state = w.active ? 'up' : w.rest > 0 ? 'rest' : w.meter < w.start ? 'charging' : !w.speedOk ? 'slow' : 'ready';
+    if (state !== this.wheelieState) {
+      this.wheelieState = state;
+      el.className = state;
+      el.querySelector('small').textContent = { up: 'hold Shift', rest: 'cooling…', charging: 'recharging…', slow: '40+ km/h', ready: 'Shift' }[state];
+    }
   }
 
   toggleStats() {

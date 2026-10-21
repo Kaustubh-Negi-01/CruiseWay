@@ -5,7 +5,28 @@ import { clamp } from '../world/generation/noise.js';
 const G = 16;
 const FIXED = 1 / 120;
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
-const _lean = new THREE.Quaternion(), _axis = new THREE.Vector3();
+const _lean = new THREE.Quaternion(), _axis = new THREE.Vector3(), _p = new THREE.Vector3();
+
+// Wheelies: hold the wheelie key above minSpeed. The meter drains while the
+// front is up and recharges after a short rest. Steering is much weaker and
+// the bike wobbles, in exchange for a small speed bonus.
+export const WHEELIE = {
+  minSpeed: 11,      // m/s (~40 km/h) to start one
+  dropSpeed: 9,      // below this it comes down
+  startMeter: 0.35,  // need at least this much charge to start
+  drain: 0.28,       // per second while up (~3.5 s from full)
+  recharge: 0.14,    // per second after the rest (~7 s to full)
+  rest: 1.0,         // seconds before recharging starts
+  angle: 0.42,       // radians of front lift (~24°)
+};
+
+// Roll (lean) plus wheelie pitch for the bike's leaning group, pivoting the
+// pitch on the rear tyre's contact patch so the back wheel stays planted.
+export function poseLean(lean, roll, pitch, rearZ) {
+  lean.rotation.set(-pitch, 0, roll);
+  _p.set(0, 0, rearZ).applyEuler(lean.rotation);
+  lean.position.set(-_p.x, -_p.y, rearZ - _p.z);
+}
 
 // Arcade motorbike: planar drive + lateral grip, glued to the terrain with a
 // soft suspension so rolling hills and off-road slopes feel smooth.
@@ -43,6 +64,7 @@ export class Bike {
     this.slip = 0;            // sideways sliding speed (m/s), for tyre sounds
     this.airTime = 0;
     this.braking = 0;
+    this.wheelie = { active: false, meter: 1, rest: 0, angle: 0, t: 0 };
     this.prevPos = new THREE.Vector3();
     this.prevYaw = 0;
     this.renderPos = new THREE.Vector3();
@@ -71,6 +93,7 @@ export class Bike {
     this.smoothNormal.copy(this.normal);
     this.prevPos.copy(this.pos);
     this.renderPos.copy(this.pos);
+    if (this.wheelie) { this.wheelie.active = false; this.wheelie.angle = 0; }
     this.prevYaw = this.renderYaw = yaw;
     this.acc = 0;
   }
@@ -111,6 +134,10 @@ export class Bike {
     // lean from the centripetal demand of the turn: tan(lean) = v * yawRate / g
     const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62);
     this.lean += (target - this.lean) * (1 - Math.exp(-dt * 5));
+    // front wheel up / down
+    const w = this.wheelie;
+    const lift = w.active ? WHEELIE.angle + 0.05 * Math.sin(w.t * 3.1) : 0;
+    w.angle += (lift - w.angle) * (1 - Math.exp(-dt * (w.active ? 4 : 7)));
   }
 
   step(dt, input) {
@@ -120,19 +147,34 @@ export class Bike {
     let vf = this.vel.x * fx + this.vel.z * fz;
     let vl = this.vel.x * fz - this.vel.z * fx;
 
+    // wheelie: start, keep up, or drop
+    const w = this.wheelie;
+    if (w.active) {
+      if (!input.wheelie || input.brake > 0 || vf < WHEELIE.dropSpeed || w.meter <= 0) this.endWheelie();
+    } else if (input.wheelie && this.onGround && vf > WHEELIE.minSpeed && !input.brake && w.meter >= WHEELIE.startMeter && w.rest <= 0) {
+      w.active = true;
+    }
+    if (w.active) {
+      w.meter = Math.max(0, w.meter - WHEELIE.drain * dt);
+      w.t += dt;
+    } else {
+      w.rest = Math.max(0, w.rest - dt);
+      if (w.rest <= 0) w.meter = Math.min(1, w.meter + WHEELIE.recharge * dt);
+    }
+
     const steerTarget = input.steer;
-    const rate = Math.abs(steerTarget) > Math.abs(this.steer) ? 3.2 : 6;
+    const rate = (Math.abs(steerTarget) > Math.abs(this.steer) ? 3.2 : 6) * (w.active ? 0.5 : 1);
     this.steer += (steerTarget - this.steer) * (1 - Math.exp(-dt * rate));
 
     this.surface = this.world.surfaceAt(this.pos.x, this.pos.z);
     this.onRoad = this.surface !== 0;
     const traction = this.onGround ? 1 : 0.04;
     const wet = this.pos.y < -0.5;   // riding into the sea or a lake
-    const top = s.maxSpeed * (this.surface === 1 ? 1 : this.surface === 2 ? s.dirtTop : s.offTop) * (wet ? 0.25 : 1);
+    const top = s.maxSpeed * (this.surface === 1 ? 1 : this.surface === 2 ? s.dirtTop : s.offTop) * (wet ? 0.25 : 1) * (w.active ? 1.06 : 1);
 
     if (input.throttle > 0) {
       if (vf < -0.5) vf += s.brake * input.throttle * dt * traction;
-      else vf += s.accel * input.throttle * Math.max(0, 1 - (vf / top) ** 2) * dt * traction;
+      else vf += s.accel * (w.active ? 1.12 : 1) * input.throttle * Math.max(0, 1 - (vf / top) ** 2) * dt * traction;
     }
     if (input.brake > 0) {
       if (vf > 0.5) vf -= s.brake * input.brake * dt * traction;
@@ -148,13 +190,19 @@ export class Bike {
 
     let grip = this.surface === 1 ? s.grip : this.surface === 2 ? s.dirtGrip : s.offGrip;
     if (input.handbrake) { grip = s.handbrakeGrip; vf -= vf * 0.5 * dt; }
+    if (w.active) grip *= 0.8;
     vl *= Math.exp(-grip * traction * dt);
     this.slip = this.onGround ? Math.abs(vl) : 0;
     this.braking = this.onGround && vf > 2 ? Math.max(input.brake, input.handbrake ? 0.7 : 0) : 0;
 
     const sp = Math.abs(vf);
-    const steerAmt = this.steer * s.steer * Math.min(1, sp / 3) / (1 + sp / 26);
-    const target = steerAmt * Math.sign(vf) * (input.handbrake ? 1.3 : 1);
+    const steerAmt = this.steer * s.steer * Math.min(1, sp / 3) / (1 + sp / 36) * (w.active ? 0.2 : 1);
+    let target = steerAmt * Math.sign(vf) * (input.handbrake ? 1.3 : 1);
+    if (w.active) {
+      // balancing on the back wheel: a wandering tug you have to correct
+      const t = w.t;
+      target += (Math.sin(t * 2.3) + 0.6 * Math.sin(t * 5.1 + 1) + 0.4 * Math.sin(t * 8.7 + 2)) * 0.16 * Math.min(1, sp / 20);
+    }
     this.yawRate += (target - this.yawRate) * (1 - Math.exp(-dt * 6 * (this.onGround ? 1 : 0.15)));
     this.yaw += this.yawRate * dt;
 
@@ -173,6 +221,16 @@ export class Bike {
     this.collideTrees();
     if (this.constraint) {
       const hit = this.constraint(this.pos, this.vel);
+      if (hit > 0) {
+        // turn the bike to run along the wall instead of into it
+        const along = Math.atan2(this.vel.x, this.vel.z);
+        if (vf > 3) {
+          let d = along - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+          this.yaw += d * 0.35;
+          this.yawRate *= 0.5;
+        }
+        if (w.active && hit > 1) this.endWheelie();
+      }
       if (hit > 0.5) this.onImpact?.('wall', hit);
     }
 
@@ -195,6 +253,11 @@ export class Bike {
     this.lastGround = h;
   }
 
+  endWheelie() {
+    this.wheelie.active = false;
+    this.wheelie.rest = WHEELIE.rest;
+  }
+
   // Glance off tree trunks: push out, kill the velocity into the trunk, scrub speed.
   collideTrees() {
     const trunks = this.world.gen.trunksNear(this.pos.x, this.pos.z, this.trunkBuf || (this.trunkBuf = []));
@@ -212,6 +275,7 @@ export class Bike {
         this.vel.x *= 0.55;
         this.vel.z *= 0.55;
         this.bumped = performance.now();
+        if (this.wheelie.active) this.endWheelie();
         if (-vn > 1) this.onImpact?.('tree', -vn);
       }
     }
@@ -230,7 +294,7 @@ export class Bike {
     model.position.set(this.renderPos.x, this.bodyY, this.renderPos.z);
     this.orientation(model.quaternion);
     const ud = model.userData;
-    ud.lean.rotation.z = this.lean;
+    poseLean(ud.lean, this.lean, this.wheelie.angle, this.spec.rearZ);
     ud.steerer.rotation.y = this.steer * 0.25 * Math.max(0.2, 1 - this.speed / 30);
     for (const w of ud.wheels) w.rotation.x = this.wheelSpin;
   }
@@ -243,6 +307,7 @@ export class Bike {
       p: [r(this.pos.x), r(this.bodyY), r(this.pos.z)],
       q: [r3(_q.x), r3(_q.y), r3(_q.z), r3(_q.w)],
       l: r(this.lean),
+      w: r(this.wheelie.angle),
       st: r(this.steer),
       v: r(this.forwardSpeed),
     };
