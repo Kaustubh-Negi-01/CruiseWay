@@ -185,7 +185,7 @@ export class UI {
     if (state !== this.guideState) {
       this.guideState = state;
       el.className = state;
-      const titles = { wrongway: 'WRONG WAY', wrongroute: 'WRONG ROUTE', shortcut: 'Shortcut', offroute: 'OFF ROUTE', turnaround: 'TURN AROUND' };
+      const titles = { wrongway: 'TURN AROUND', turnaround: 'TURN AROUND' };
       $('#guideTitle').textContent = titles[state];
       // U-turn arrow for going backwards; warning triangle for leaving the route
       $('#guideIcon').innerHTML = state === 'wrongway' || state === 'turnaround'

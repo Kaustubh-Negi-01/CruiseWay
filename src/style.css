@@ -220,3 +220,4 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
 #lobbyBar.member b { font-size: 17px; }
 #guide.offroute { border-color: rgba(242,193,78,.5); }
 #guide.offroute b { color: #f2c14e; }
+#hud.cockpit .speedo .dial { display: none; }

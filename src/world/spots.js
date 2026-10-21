@@ -43,14 +43,17 @@ export class Route {
 
   // Closest point on the route to (x, z), searching ±win metres around a
   // hint (the rider's last known progress). Returns { s, d, tx, tz }.
-  nearestS(x, z, hint, win = 300) {
+  // `bias` (m of distance per m along the route) favours points near the hint,
+  // so where the route doubles back on itself we don't leap to the far side.
+  nearestS(x, z, hint, win = 300, bias = 0.08) {
     const i0 = Math.max(0, this.indexAt(hint - win)), i1 = Math.min(this.n - 2, this.indexAt(hint + win) + 1);
-    let bi = i0, bd = Infinity;
+    let bi = i0, bc = Infinity;
     for (let i = i0; i <= i1; i++) {
-      const d = (this.x[i] - x) ** 2 + (this.z[i] - z) ** 2;
-      if (d < bd) { bd = d; bi = i; }
+      const d2 = (this.x[i] - x) ** 2 + (this.z[i] - z) ** 2;
+      const cost = d2 + (bias * (this.s[i] - hint)) ** 2;
+      if (cost < bc) { bc = cost; bi = i; }
     }
-    let best = { s: this.s[bi], d: Math.sqrt(bd), tx: 0, tz: 1 };
+    let best = { s: this.s[bi], d: Math.hypot(this.x[bi] - x, this.z[bi] - z), tx: 0, tz: 1 };
     for (let i = Math.max(0, bi - 1); i <= Math.min(this.n - 2, bi); i++) {
       const ax = this.x[i], az = this.z[i], ex = this.x[i + 1] - ax, ez = this.z[i + 1] - az;
       const l2 = ex * ex + ez * ez || 1;
