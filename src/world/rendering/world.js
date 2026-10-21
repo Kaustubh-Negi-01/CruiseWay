@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from './terrainGen.js';
-import { KIND_DIRT, ROAD_STEP } from './network.js';
-import { DIFFICULTY } from './spots.js';
+import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from '../generation/terrainGen.js';
+import { KIND_DIRT, ROAD_STEP } from '../generation/network.js';
+import { DIFFICULTY } from '../generation/spots.js';
 import { patch, textures, raw, ATMOS } from './materials.js';
 import { GrassField } from './grass.js';
-import TerrainWorker from './terrain.worker.js?worker';
+import TerrainWorker from '../generation/terrain.worker.js?worker';
 
 const ROAD_PIECE = 64;     // samples per road mesh
 const MAX_IN_FLIGHT = 2;

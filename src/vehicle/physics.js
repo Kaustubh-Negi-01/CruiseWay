@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BIKE } from './bike.js';
-import { clamp } from './world/noise.js';
+import { clamp } from '../world/generation/noise.js';
 
 const G = 16;
 const FIXED = 1 / 120;

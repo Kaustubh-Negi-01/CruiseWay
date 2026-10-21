@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { hash2 } from './noise.js';
+import { hash2 } from '../generation/noise.js';
 
 import { patch, textures } from './materials.js';
 
