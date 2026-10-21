@@ -24,7 +24,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - <kbd>R</kbd> takes you back to your last checkpoint.
   - Results at the end, and the session leaderboard counts wins.
 - **Sound (all generated live, no audio files):**
-  - riding: an electric motor whine, tyre roar that changes on tarmac, dirt and grass, and wind that builds with speed
+  - riding: a deep petrol twin engine with a six-speed gearbox (it shifts as you speed up and burbles when you lift off), tyre roar that changes on tarmac, dirt and grass, and wind that builds with speed
   - tyre screech and scrub when you brake, slide or lean hard
   - thumps for landings, tree and barrier hits, and splashes
   - countdown beeps and checkpoint and finish chimes
