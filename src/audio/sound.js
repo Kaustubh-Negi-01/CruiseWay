@@ -82,11 +82,17 @@ export class SoundManager {
     if (this.ctx) this.apply();
   }
 
+  // While the radio plays, the zen music fades out (and comes back after).
+  setDuck(on) {
+    this.ducked = on;
+    if (this.ctx) this.apply();
+  }
+
   apply() {
     const s = this.settings, t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(s.master, t, 0.05);
     this.fx.gain.setTargetAtTime(s.effectsOn ? s.effects : 0, t, 0.05);
-    this.musicBus.gain.setTargetAtTime(s.musicOn ? s.music : 0, t, 0.3);
+    this.musicBus.gain.setTargetAtTime(s.musicOn && !this.ducked ? s.music : 0, t, this.ducked ? 0.6 : 1.5);
     if (s.musicOn) this.music.start(); else this.music.stop();
   }
 

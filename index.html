@@ -86,6 +86,14 @@
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div></div>
     <div id="countdown"></div>
     <div id="stats" class="hidden"></div>
+    <div id="nowPlaying" class="hidden">
+      <div id="npArt"></div>
+      <div class="np-meta"><b id="npTitle"></b><small id="npArtist"></small></div>
+      <button id="npToggle" title="Play / pause">▶</button>
+      <button id="npNext" title="Next">⏭</button>
+      <input type="range" id="npVolume" min="0" max="100" title="Radio volume" />
+      <button id="npOpen" title="Open the radio (Q)">Q</button>
+    </div>
     <div id="flash"></div>
     <div id="toasts"></div>
     <div id="touch">
@@ -119,6 +127,21 @@
     <div id="spotCard" class="hidden"></div>
   </div>
 
+  <div id="radio" class="hidden">
+    <div class="radio-head">
+      <h2>📻 Radio</h2>
+      <button class="btn small" id="radioClose">Close · Q</button>
+    </div>
+    <div class="radio-tabs">
+      <button data-src="songs" class="on">Songs</button>
+      <button data-src="live">Live radio</button>
+    </div>
+    <form id="radioSearch"><input id="radioQuery" placeholder="Search songs or artists" autocomplete="off" spellcheck="false" /></form>
+    <div class="chips" id="radioGenres"></div>
+    <div id="radioBody"></div>
+    <p class="radio-credit">Songs streamed from <a href="https://audius.co" target="_blank" rel="noopener">Audius</a> · stations from <a href="https://www.radio-browser.info" target="_blank" rel="noopener">radio-browser.info</a></p>
+  </div>
+
   <div id="pause" class="modal hidden">
     <div class="card">
       <h2>Paused <small>(the world keeps going for everyone else)</small></h2>
@@ -138,6 +161,7 @@
         <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
         <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
         <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
+        <li><kbd>Q</kbd> — radio: search and play songs or live stations</li>
         <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>
         <li><kbd>F3</kbd> — performance overlay (FPS, load)</li>
         <li>Gamepad: stick steer · RT/LT gas/brake · A handbrake · Y reset · B camera</li>
