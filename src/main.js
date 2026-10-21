@@ -6,8 +6,8 @@ import { MapView } from './map.js';
 
 const $ = (s) => document.querySelector(s);
 const store = {
-  get(k, d) { try { return localStorage.getItem('convoy:' + k) ?? d; } catch { return d; } },
-  set(k, v) { try { localStorage.setItem('convoy:' + k, v); } catch { /* private mode */ } },
+  get(k, d) { try { return localStorage.getItem('cruiseway:' + k) ?? localStorage.getItem('convoy:' + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('cruiseway:' + k, v); } catch { /* private mode */ } },
 };
 
 const ui = new UI();
@@ -229,4 +229,4 @@ setInterval(() => {
 }, 250);
 
 // debug handle for testing in the console
-window.convoy = { game };
+window.cruiseway = { game };

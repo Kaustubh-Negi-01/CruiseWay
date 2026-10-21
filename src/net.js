@@ -4,7 +4,7 @@ import { Peer } from 'peerjs';
 // connects only to the host, and the host relays state to everyone else.
 // The world code maps directly to the host's peer id, so no backend is needed.
 
-const PREFIX = 'convoy-v1-';
+const PREFIX = 'cruiseway-v1-';
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const MAX_PLAYERS = 6;
 
