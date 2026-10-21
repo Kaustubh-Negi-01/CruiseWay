@@ -23,13 +23,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Checkpoints count in order.
   - <kbd>R</kbd> takes you back to your last checkpoint.
   - Results at the end, and the session leaderboard counts wins.
-- **Sound (all generated live, no audio files):**
-  - riding: a deep petrol twin engine with a six-speed gearbox (it shifts as you speed up and burbles when you lift off), tyre roar that changes on tarmac, dirt and grass, and wind that builds with speed
-  - tyre screech and scrub when you brake, slide or lean hard
-  - thumps for landings, tree and barrier hits, and splashes
-  - countdown beeps and checkpoint and finish chimes
-  - a calm generative zen soundtrack
-  - music and effects can each be turned on or off and set in volume in the Esc menu
+- **Sound:**
+  - Riding uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
+  - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; a calm generative zen soundtrack.
+  - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Controls:** keyboard, gamepad and on-screen touch controls.
 
 | Key | Action |
@@ -144,4 +141,4 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 
 ## Credits
 
-- Engine recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). Everything else, including the other sounds and the music, is generated in code.
+- Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.

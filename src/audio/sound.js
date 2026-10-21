@@ -1,12 +1,13 @@
 import { ZenMusic } from './music.js';
 
-// All game audio, synthesised live with the Web Audio API (no sample files).
+// Game audio, using the Web Audio API.
 //
-//   master ─┬─ effects bus ─ continuous riding layers + one-shot effects
+//   master ─┬─ effects bus ─ riding sound (the two recorded clips) + one-shots
 //           └─ music bus ─── zen soundtrack
 //
-// Riding layers (petrol engine, tyre roar, gravel crunch, wind, skid) run
-// continuously and are steered every frame from the bike's state.
+// Riding sound is only the two recordings in public/audio: one for tarmac,
+// one for grass and dirt. Short loops are cut from each (idle, low revs, high
+// revs) and blended by engine revs and by the surface under the bike.
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -14,13 +15,12 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const GEARS = [0, 500, 335, 255, 200, 162, 136];
 const IDLE = 1100, UPSHIFT = 6600, DOWNSHIFT = 2700;
 
-// Recorded engine: two clips (public/audio), one for tarmac and one for
-// grass/dirt. From each we cut a low-rev and a high-rev loop (seconds into
-// the clip) and the engine revs they roughly correspond to. Tune by ear.
+// Loop sections, in seconds into each clip. Tune by ear if needed.
 const SAMPLES = {
-  road: { file: 'engine-road.mp3', low: [4.0, 6.0], high: [9.6, 11.4] },
-  off:  { file: 'engine-offroad.mp3', low: [4.0, 6.0], high: [9.6, 11.4] },
+  road: { file: 'engine-road.mp3',    idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
+  off:  { file: 'engine-offroad.mp3', idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
 };
+const BANDS = ['idle', 'low', 'high'];
 const LOW_RPM = 3000, HIGH_RPM = 6500;
 
 export const DEFAULT_SOUND = { master: 0.8, effects: 0.8, music: 0.45, effectsOn: true, musicOn: true };
@@ -50,8 +50,7 @@ export class SoundManager {
     this.fx.connect(this.master);
     this.musicBus = ctx.createGain();
     this.musicBus.connect(this.master);
-    this.white = noiseBuffer(ctx, 'white');
-    this.brown = noiseBuffer(ctx, 'brown');
+    this.white = noiseBuffer(ctx);
     this.music = new ZenMusic(ctx, this.musicBus);
     this.loadSamples();
     this.apply();
@@ -64,42 +63,18 @@ export class SoundManager {
   async loadSamples() {
     const ctx = this.ctx, base = import.meta.env.BASE_URL || '/';
     try {
-      const decoded = await Promise.all(Object.values(SAMPLES).map(async (c) =>
-        ctx.decodeAudioData(await (await fetch(base + 'audio/' + c.file)).arrayBuffer())));
       const keys = Object.keys(SAMPLES);
+      const decoded = await Promise.all(keys.map(async (k) =>
+        ctx.decodeAudioData(await (await fetch(base + 'audio/' + SAMPLES[k].file)).arrayBuffer())));
       this.samples = {};
       keys.forEach((k, i) => {
-        this.samples[k] = { low: makeLoop(ctx, decoded[i], ...SAMPLES[k].low), high: makeLoop(ctx, decoded[i], ...SAMPLES[k].high) };
+        this.samples[k] = {};
+        for (const band of BANDS) this.samples[k][band] = makeLoop(ctx, decoded[i], ...SAMPLES[k][band]);
       });
-      if (this.riding) this.startSampleEngine();
+      if (this.riding) this.startVoices();
     } catch (e) {
-      console.warn('engine samples unavailable, using the synthesised engine', e);
+      console.warn('engine recordings could not be loaded', e);
     }
-  }
-
-  // Four looping voices (road low/high, off-road low/high) whose speed tracks
-  // the revs; we crossfade low<->high by rpm and road<->off-road by surface.
-  startSampleEngine() {
-    if (!this.samples || this.layers.sampleBus) return;
-    const ctx = this.ctx, L = this.layers;
-    L.sampleGain = gain(ctx, 0, this.fx);
-    L.sampleFilter = filter(ctx, 'lowpass', 6000, 0.7, L.sampleGain);
-    L.sampleBus = L.sampleFilter;
-    L.voices = {};
-    for (const surface of ['road', 'off']) {
-      for (const band of ['low', 'high']) {
-        const g = gain(ctx, 0, L.sampleBus);
-        const src = ctx.createBufferSource();
-        src.buffer = this.samples[surface][band];
-        src.loop = true;
-        src.connect(g);
-        src.start(ctx.currentTime, Math.random() * src.buffer.duration);
-        L.voices[surface + band] = { src, g };
-      }
-    }
-    // the recordings carry the engine now: silence the synthesised voice
-    L.engGain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
-    this.surfaceMix = 1;
   }
 
   set(changes) {
@@ -115,178 +90,94 @@ export class SoundManager {
     if (s.musicOn) this.music.start(); else this.music.stop();
   }
 
-  // ---- continuous riding layers -----------------------------------------------
+  // ---- riding sound: the two recordings ------------------------------------------
 
   startRide() {
     this.wantRide = true;
     if (!this.ctx || this.riding) return;
     this.riding = true;
-    const ctx = this.ctx;
-    const L = (this.layers = {});
-
-    // Petrol twin. A pulse-shaped wave at the firing frequency (rpm/60) gives
-    // the beat of the cylinders; a sub-octave sine adds the lumpy thump; the
-    // exhaust is low noise pulsed in time with the firing. A soft drive stage
-    // and a warm low-pass keep it round rather than buzzy.
-    L.engGain = gain(ctx, 0, this.fx);
-    L.engFilter = filter(ctx, 'lowpass', 500, 1.1, L.engGain);
-    L.engDrive = ctx.createWaveShaper();
-    L.engDrive.curve = softClip(1.6);
-    L.engDrive.connect(L.engFilter);
-    L.engPre = gain(ctx, 0.6, L.engDrive);
-    const wave = pulseWave(ctx);
-    L.eng1 = osc(ctx, 'sine', 30, L.engPre); L.eng1.setPeriodicWave(wave);
-    L.eng2 = osc(ctx, 'sine', 30, gain(ctx, 0.55, L.engPre)); L.eng2.setPeriodicWave(wave); // slightly uneven second cylinder
-    L.subGain = gain(ctx, 0, L.engGain);
-    L.sub = osc(ctx, 'sine', 15, L.subGain);
-    L.exGain = gain(ctx, 0, L.engFilter);
-    L.exAM = gain(ctx, 0.5, L.exGain);
-    L.exFilter = filter(ctx, 'bandpass', 180, 1.5, L.exAM);
-    noise(ctx, this.brown, L.exFilter);
-    L.exPulse = osc(ctx, 'sine', 30, gain(ctx, 0.5, L.exAM.gain));
     this.gear = 1;
     this.rpm = IDLE;
     this.shiftUntil = 0;
-    this.prevThrottle = 0;
-    this.liftAt = -9;
-    this.nextPop = 0;
-    this.lastT = ctx.currentTime;
-    if (this.samples) this.startSampleEngine();
+    this.surfaceMix = 1;
+    this.lastT = this.ctx.currentTime;
+    this.startVoices();
+  }
 
-    // tyre roar on tarmac: band-passed noise, brighter with speed
-    L.roadGain = gain(ctx, 0, this.fx);
-    L.roadFilter = filter(ctx, 'bandpass', 400, 0.7, L.roadGain);
-    noise(ctx, this.white, L.roadFilter);
-
-    // gravel / grass crunch: noise through a high-pass, chopped by a random-ish LFO
-    L.crunchGain = gain(ctx, 0, this.fx);
-    L.crunchAM = gain(ctx, 0.5, L.crunchGain);
-    L.crunchFilter = filter(ctx, 'highpass', 1400, 0.5, L.crunchAM);
-    noise(ctx, this.white, L.crunchFilter);
-    L.crunchLfoGain = gain(ctx, 0.5, L.crunchAM.gain);
-    L.crunchLfo = osc(ctx, 'square', 13, L.crunchLfoGain);
-
-    // wind: brown noise, opening up with speed
-    L.windGain = gain(ctx, 0, this.fx);
-    L.windFilter = filter(ctx, 'lowpass', 300, 0.5, L.windGain);
-    noise(ctx, this.brown, L.windFilter);
-
-    // skid / tyre scrub: narrow band of noise that screeches on tarmac
-    L.skidGain = gain(ctx, 0, this.fx);
-    L.skidFilter = filter(ctx, 'bandpass', 2400, 6, L.skidGain);
-    noise(ctx, this.white, L.skidFilter);
+  // Six looping voices: road/off-road × idle/low/high.
+  startVoices() {
+    if (!this.samples || this.voices) return;
+    const ctx = this.ctx;
+    this.rideGain = gain(ctx, 0, this.fx);
+    this.voices = {};
+    for (const surface of Object.keys(SAMPLES)) {
+      for (const band of BANDS) {
+        const g = gain(ctx, 0, this.rideGain);
+        const src = ctx.createBufferSource();
+        src.buffer = this.samples[surface][band];
+        src.loop = true;
+        src.connect(g);
+        src.start(ctx.currentTime, Math.random() * src.buffer.duration);
+        this.voices[surface + band] = { src, g };
+      }
+    }
   }
 
   stopRide() {
     this.wantRide = false;
     if (!this.riding) return;
     this.riding = false;
-    const t = this.ctx.currentTime;
-    for (const k of ['engGain', 'sampleGain', 'roadGain', 'crunchGain', 'windGain', 'skidGain']) this.layers[k]?.gain.setTargetAtTime(0, t, 0.1);
+    this.rideGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
   }
 
-  // b: { speed (m/s), throttle 0-1, braking 0-1, slip (m/s), surface 0/1/2, onGround, lean (rad) }
+  // b: { speed (m/s), throttle 0-1, surface 0/1/2, onGround, ... }
   update(b) {
-    if (!this.riding || !this.ctx) return;
-    const L = this.layers, t = this.ctx.currentTime, T = 0.06;
-    const sp = Math.max(0, b.speed), v = clamp01(sp / 50);
-    const ground = b.onGround ? 1 : 0;
-
-    this.engine(b, sp, t);
-
-    // tyres: tarmac hiss vs gravel crunch vs soft grass
-    const lean = Math.min(1, Math.abs(b.lean) / 0.6);
-    const tarmac = b.surface === 1 ? 1 : 0, dirt = b.surface === 2 ? 1 : 0, grass = b.surface === 0 ? 1 : 0;
-    L.roadFilter.frequency.setTargetAtTime(250 + sp * 18 + lean * 220 - grass * 120, t, T);
-    L.roadGain.gain.setTargetAtTime(ground * v * (tarmac * 0.22 + dirt * 0.12 + grass * 0.08) * (1 + lean * 0.4), t, T);
-    L.crunchLfo.frequency.setTargetAtTime(6 + sp * 0.9, t, T);
-    L.crunchFilter.frequency.setTargetAtTime(dirt ? 1200 : 2600, t, T);
-    L.crunchGain.gain.setTargetAtTime(ground * clamp01(sp / 25) * (dirt * 0.2 + grass * 0.08), t, T);
-
-    // wind rises steeply with speed, and gusts a little as you lean
-    L.windFilter.frequency.setTargetAtTime(250 + v * v * 2200 + lean * 300, t, T);
-    L.windGain.gain.setTargetAtTime(v * v * 0.32, t, T * 2);
-
-    // skid: braking hard or sliding sideways
-    const skid = ground * clamp01(Math.max(b.braking * clamp01(sp / 15), (b.slip - 1.2) / 5));
-    L.skidFilter.frequency.setTargetAtTime(tarmac ? 2300 + sp * 10 : 900, t, T);
-    L.skidFilter.Q.value = tarmac ? 7 : 1.2;
-    L.skidGain.gain.setTargetAtTime(skid * (tarmac ? 0.16 : 0.12), t, 0.04);
-  }
-
-  // Gearbox + engine voice. Upshifts cut the throttle for a moment and the
-  // revs drop into the next gear; lifting off at high revs gives a soft
-  // burble of exhaust pops.
-  engine(b, sp, t) {
-    const L = this.layers, T = 0.05;
+    if (!this.riding || !this.ctx || !this.voices) return;
+    const t = this.ctx.currentTime, T = 0.06;
     const dt = Math.min(0.1, Math.max(0.001, t - this.lastT));
     this.lastT = t;
+    const sp = Math.max(0, b.speed);
+
+    // gearbox: upshifts cut the throttle briefly and drop the revs
     const shifting = t < this.shiftUntil;
     const throttle = shifting ? 0 : b.throttle;
-
-    // pick a gear for this road speed
     if (!shifting) {
-      if (this.gear < 6 && sp * GEARS[this.gear] > UPSHIFT && b.throttle > 0.1) {
-        this.gear++;
-        this.shiftUntil = t + 0.16;
-      } else if (this.gear > 1 && sp * GEARS[this.gear] < DOWNSHIFT) {
-        this.gear--;
-      }
+      if (this.gear < 6 && sp * GEARS[this.gear] > UPSHIFT && b.throttle > 0.1) { this.gear++; this.shiftUntil = t + 0.16; }
+      else if (this.gear > 1 && sp * GEARS[this.gear] < DOWNSHIFT) this.gear--;
     }
-    // engine speed: geared to the wheels once rolling, free-revving with the
-    // clutch slipping at a standstill or when the rear wheel is sliding
     let target = Math.max(IDLE, sp * GEARS[this.gear]);
     if (sp < 4) target = Math.max(target, IDLE + throttle * 1800);
-    if (b.slip > 2) target += throttle * 500;
     if (!b.onGround) target += throttle * 900;
     this.rpm += (Math.min(8200, target) - this.rpm) * (1 - Math.exp(-dt * (shifting ? 18 : 9)));
+    const rpm = this.rpm;
 
-    const fire = this.rpm / 60; // twin, one power stroke per revolution
-    L.eng1.frequency.setTargetAtTime(fire, t, T);
-    L.eng2.frequency.setTargetAtTime(fire * 1.006, t, T);
-    L.sub.frequency.setTargetAtTime(fire / 2, t, T);
-    L.exPulse.frequency.setTargetAtTime(fire, t, T);
-    L.exFilter.frequency.setTargetAtTime(fire * 3.2, t, T);
-    const r = clamp01((this.rpm - IDLE) / 6000);
-    L.engFilter.frequency.setTargetAtTime(260 + r * 900 + throttle * 1100, t, T);
-    if (!L.voices) L.engGain.gain.setTargetAtTime(0.06 + throttle * 0.08 + r * 0.03, t, T);
-    else this.sampleEngine(b, throttle, t, dt);
-    L.subGain.gain.setTargetAtTime(0.22 + throttle * 0.15, t, T);
-    L.exGain.gain.setTargetAtTime(0.25 + throttle * 0.55, t, T);
+    // which loops: idle when stopped and off the throttle, else low<->high by revs
+    const idle = clamp01(1 - Math.max(sp / 4, throttle * 2));
+    const x = clamp01((rpm - LOW_RPM) / (HIGH_RPM - LOW_RPM));
+    const wIdle = Math.sqrt(idle);
+    const wLow = Math.sqrt(1 - idle) * Math.cos(x * Math.PI / 2);
+    const wHigh = Math.sqrt(1 - idle) * Math.sin(x * Math.PI / 2);
+    // only gentle speed changes, so the clips keep their own character
+    const rateLow = Math.min(1.2, Math.max(0.85, rpm / LOW_RPM));
+    const rateHigh = Math.min(1.15, Math.max(0.85, rpm / HIGH_RPM));
 
-    // lifting off from high revs: a few soft pops for the next second or so
-    if (this.prevThrottle > 0.5 && b.throttle < 0.1 && this.rpm > 3800) this.liftAt = t;
-    this.prevThrottle = b.throttle;
-    if (t - this.liftAt < 1.1 && t > this.nextPop && sp > 8) {
-      this.nextPop = t + 0.09 + Math.random() * 0.22;
-      if (Math.random() < 0.6) this.burst(0.03 + Math.random() * 0.05, 0.06, 'lowpass', 700 + Math.random() * 600);
-    }
-  }
-
-  sampleEngine(b, throttle, t, dt) {
-    const L = this.layers, T = 0.05, rpm = this.rpm;
-    // tarmac vs grass/dirt, eased so crossing the road edge isn't abrupt
+    // your road clip on tarmac, your off-road clip on grass and dirt
     const onRoad = b.surface === 1 ? 1 : 0;
     this.surfaceMix += (onRoad - this.surfaceMix) * (1 - Math.exp(-dt * 3));
-    // low/high rev blend (equal power) and playback speed for each band
-    const x = clamp01((rpm - LOW_RPM) / (HIGH_RPM - LOW_RPM));
-    const wLow = Math.cos(x * Math.PI / 2), wHigh = Math.sin(x * Math.PI / 2);
-    const rateLow = Math.min(1.7, Math.max(0.55, rpm / LOW_RPM));
-    const rateHigh = Math.min(1.35, Math.max(0.6, rpm / HIGH_RPM));
     const road = Math.sqrt(this.surfaceMix), off = Math.sqrt(1 - this.surfaceMix);
-    const set = (k, w, rate) => {
-      L.voices[k].g.gain.setTargetAtTime(w, t, T);
-      L.voices[k].src.playbackRate.setTargetAtTime(rate, t, T);
-    };
-    set('roadlow', wLow * road, rateLow);
-    set('roadhigh', wHigh * road, rateHigh);
-    set('offlow', wLow * off, rateLow);
-    set('offhigh', wHigh * off, rateHigh);
-    // throttle opens the sound up; off-throttle it's quieter and muffled
-    L.sampleGain.gain.setTargetAtTime(0.32 + throttle * 0.38, t, T);
-    L.sampleFilter.frequency.setTargetAtTime(900 + throttle * 6000 + clamp01(rpm / 8000) * 1500, t, T);
-    // the off-road clip has its own dirt noise: ease off the synthesised crunch
-    L.crunchGain.gain.setTargetAtTime(L.crunchGain.gain.value * this.surfaceMix, t, T);
+    for (const [surface, s] of [['road', road], ['off', off]]) {
+      this.setVoice(surface + 'idle', wIdle * s, 1, t, T);
+      this.setVoice(surface + 'low', wLow * s, rateLow, t, T);
+      this.setVoice(surface + 'high', wHigh * s, rateHigh, t, T);
+    }
+    // a little quieter when coasting than under throttle
+    this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+  }
+
+  setVoice(k, w, rate, t, T) {
+    const v = this.voices[k];
+    v.g.gain.setTargetAtTime(w, t, T);
+    v.src.playbackRate.setTargetAtTime(rate, t, T);
   }
 
   // ---- one-shot effects ------------------------------------------------------------
@@ -376,20 +267,6 @@ function noise(ctx, buffer, to) {
   const s = ctx.createBufferSource(); s.buffer = buffer; s.loop = true; s.connect(to);
   s.start(ctx.currentTime, Math.random() * buffer.duration); return s;
 }
-// Harmonic recipe for a pulse-like engine wave: a strong fundamental with
-// slowly falling harmonics, even ones a bit weaker for a hollow, throaty tone.
-function pulseWave(ctx) {
-  const N = 28, real = new Float32Array(N), imag = new Float32Array(N);
-  for (let n = 1; n < N; n++) imag[n] = (1 / Math.pow(n, 0.85)) * (n % 2 ? 1 : 0.65);
-  return ctx.createPeriodicWave(real, imag);
-}
-
-function softClip(k) {
-  const n = 1024, c = new Float32Array(n);
-  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); }
-  return c;
-}
-
 // Cut [a, b] seconds out of a clip as a seamless loop: the last 0.25 s is
 // blended into the first 0.25 s so the seam can't be heard.
 function makeLoop(ctx, buf, a, b) {
@@ -407,12 +284,8 @@ function makeLoop(ctx, buf, a, b) {
   return out;
 }
 
-function noiseBuffer(ctx, kind) {
+function noiseBuffer(ctx) {
   const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
-  let last = 0;
-  for (let i = 0; i < len; i++) {
-    const w = Math.random() * 2 - 1;
-    if (kind === 'brown') { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w;
-  }
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   return buf;
 }
