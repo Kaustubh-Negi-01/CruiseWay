@@ -1,5 +1,6 @@
 import { Game, QUALITY, presetFor } from './core/game.js';
 import { UI, chips } from './ui/hud.js';
+import { SoundManager, DEFAULT_SOUND } from './audio/sound.js';
 import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
@@ -17,7 +18,17 @@ const input = new Input();
 let quality = store.get('quality', 'auto');
 if (!QUALITY[quality]) quality = 'auto';
 const fpsCap = Number(store.get('fps', '60'));
-const game = new Game($('#view'), ui, input, { msaa: presetFor(quality).msaa, quality, fpsCap });
+let soundPrefs = DEFAULT_SOUND;
+try { soundPrefs = { ...DEFAULT_SOUND, ...JSON.parse(store.get('sound', '{}')) }; } catch { /* keep defaults */ }
+const sound = new SoundManager(soundPrefs);
+const game = new Game($('#view'), ui, input, { msaa: presetFor(quality).msaa, quality, fpsCap, sound });
+
+// Browsers only start audio after the player interacts with the page.
+const unlockAudio = () => sound.unlock();
+addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+// a soft tick on every button press
+document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.click(); });
 
 // ---------------------------------------------------------------- menu
 
@@ -216,6 +227,19 @@ chips($('[data-opt=quality]'), Object.fromEntries(Object.entries(QUALITY).map(([
   qualityHint(q);
 });
 qualityHint(quality);
+// sound settings (remembered per device)
+function saveSound(changes) {
+  sound.set(changes);
+  store.set('sound', JSON.stringify(sound.settings));
+}
+chips($('[data-opt=music]'), { on: 'On', off: 'Off' }, soundPrefs.musicOn ? 'on' : 'off', (v) => saveSound({ musicOn: v === 'on' }));
+chips($('[data-opt=effects]'), { on: 'On', off: 'Off' }, soundPrefs.effectsOn ? 'on' : 'off', (v) => saveSound({ effectsOn: v === 'on' }));
+for (const key of ['master', 'music', 'effects']) {
+  const el = $('#vol-' + key);
+  el.value = Math.round(soundPrefs[key] * 100);
+  el.addEventListener('input', () => saveSound({ [key]: el.value / 100 }));
+}
+
 chips($('[data-opt=fps]'), { 30: '30 FPS', 60: '60 FPS', 0: 'Max' }, String(fpsCap), (v) => {
   store.set('fps', v);
   game.fpsCap = Number(v);

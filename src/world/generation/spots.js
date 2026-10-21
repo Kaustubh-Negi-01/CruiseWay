@@ -19,16 +19,17 @@ const PLACES = ['Pine', 'Copper', 'Granite', 'Hollow', 'Ember', 'Misty', 'Falcon
 export class Route {
   constructor(net, steps) {
     // steps: [[edgeId, forward], ...] -> one continuous polyline
-    const xs = [], ys = [], zs = [];
+    const xs = [], ys = [], zs = [], hs = [];
     steps.forEach(([id, fwd], k) => {
       const e = net.edges[id];
       for (let j = 0; j < e.n; j++) {
         const i = fwd ? j : e.n - 1 - j;
         if (k > 0 && j === 0) continue; // shared junction point
-        xs.push(e.x[i]); ys.push(e.y[i]); zs.push(e.z[i]);
+        xs.push(e.x[i]); ys.push(e.y[i]); zs.push(e.z[i]); hs.push(e.half);
       }
     });
     this.x = Float32Array.from(xs); this.y = Float32Array.from(ys); this.z = Float32Array.from(zs);
+    this.half = Float32Array.from(hs); // road half-width at each sample
     this.n = xs.length;
     this.s = new Float32Array(this.n);
     for (let i = 1; i < this.n; i++) this.s[i] = this.s[i - 1] + Math.hypot(this.x[i] - this.x[i - 1], this.z[i] - this.z[i - 1]);

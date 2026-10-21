@@ -19,9 +19,14 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Nine spots on every island. Each has a fixed route along the network, a name, and a difficulty from Easy to Extreme. Difficulty comes from length, twistiness, climbing and dirt, ranked against the other spots on that island.
   - Ride up to a spot and *READY TO RACE?* pops up. Accept, and a lobby opens for 15 seconds so friends can ride over and join. Any member can press *Start now*.
   - Then everyone spawns on the same start line for a frozen 3-2-1, then go.
-  - You must pass each checkpoint, but any route counts, so off-road shortcuts are fair game.
+  - Holographic barriers line both sides of the route while you race. Brushing one pushes you back onto the track and costs you speed, so racing is about clean lines, not shortcuts.
+  - Checkpoints count in order.
   - <kbd>R</kbd> takes you back to your last checkpoint.
   - Results at the end, and the session leaderboard counts wins.
+- **Sound:**
+  - Riding uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
+  - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; a calm generative zen soundtrack.
+  - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Controls:** keyboard, gamepad and on-screen touch controls.
 
 | Key | Action |
@@ -101,6 +106,11 @@ src/
 
   race/
     markers.js             start / checkpoint / finish gates and beacon
+    barriers.js            holographic race walls + keeping racers inside them
+
+  audio/
+    sound.js               sound engine: riding sounds, impacts, race chimes, settings
+    music.js               generative zen soundtrack
 
   ui/
     hud.js                 HUD, prompts, results, performance overlay
@@ -128,3 +138,7 @@ Where to look:
 - **Buttons and menus:** `index.html` and `src/ui/`.
 
 Inspired by the calm open-road feel of games like slowroads.io. All code and art here is original.
+
+## Credits
+
+- Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.
