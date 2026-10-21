@@ -201,3 +201,22 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
   #lobbyBar { max-width: calc(100vw - 24px); top: auto; bottom: 200px; white-space: normal; border-radius: 14px; }
   #spotPrompt { bottom: 200px; }
 }
+
+/* ---------- race / GPS guidance banner ---------- */
+#guide { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center;
+  padding: 10px 16px 10px 12px; border-radius: 16px; background: rgba(14,16,20,0.82); border: 1px solid var(--line);
+  backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,.4); white-space: nowrap; }
+#guide b { display: block; font: 900 20px/1.1 system-ui; letter-spacing: .12em; }
+#guide small { display: block; font-size: 13px; color: rgba(255,255,255,.8); margin-top: 2px; }
+#guide.wrongway, #guide.wrongroute { border-color: rgba(239,79,79,.7); background: rgba(60,10,12,0.85); animation: pulse 1s ease-in-out infinite; }
+#guide.wrongway b, #guide.wrongroute b { color: #ff6b6b; }
+#guide.shortcut { border-color: rgba(242,193,78,.5); }
+#guide.shortcut b { color: #f2c14e; font-size: 15px; }
+#guide.turnaround { border-color: rgba(56,232,255,.6); }
+#guide.turnaround b { color: #38e8ff; }
+#guideArrow { color: #fff; transition: transform .12s linear; flex: none; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(239,79,79,.18), 0 10px 30px rgba(0,0,0,.4); } }
+#lobbyBar.member { top: 70px; padding: 12px 12px 12px 20px; font-size: 16px; border-color: rgba(232,196,74,.6); }
+#lobbyBar.member b { font-size: 17px; }
+#guide.offroute { border-color: rgba(242,193,78,.5); }
+#guide.offroute b { color: #f2c14e; }

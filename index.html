@@ -68,6 +68,11 @@
     </div>
     <canvas id="minimap" width="200" height="200"></canvas>
     <div id="raceBar" class="hidden"></div>
+    <div id="guide" class="hidden">
+      <svg id="guideIcon" viewBox="0 0 48 48" width="40" height="40"></svg>
+      <div><b id="guideTitle"></b><small id="guideText"></small></div>
+      <svg id="guideArrow" viewBox="0 0 40 40" width="30" height="30"><path d="M20 4 L31 32 L20 25 L9 32 Z" fill="currentColor"/></svg>
+    </div>
     <div id="lobbyBar" class="hidden"><span id="lobbyText"></span><button class="btn small primary hidden" id="lobbyGo">Start now</button></div>
     <div id="nav" class="hidden"><svg viewBox="0 0 40 40" width="34" height="34"><path id="navArrow" d="M20 4 L31 32 L20 25 L9 32 Z" fill="#38e8ff" stroke="#06222a" stroke-width="2" stroke-linejoin="round"/></svg><div><b id="navDist"></b><small id="navName"></small></div></div>
     <div id="spotPrompt" class="hidden">
@@ -116,11 +121,13 @@
   <div id="pause" class="modal hidden">
     <div class="card">
       <h2>Paused <small>(the world keeps going for everyone else)</small></h2>
+      <div class="opt"><span>Graphics</span><div class="chips" data-opt="quality"></div></div>
+      <p class="hint" id="qualityHint"></p>
       <ul class="keys">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — ride</li>
         <li><kbd>Space</kbd> — rear brake (slide)</li>
         <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
-        <li><kbd>C</kbd> — change camera</li>
+        <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
         <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
         <li>Gamepad: stick steer · RT/LT gas/brake · A handbrake · Y reset · B camera</li>
       </ul>

@@ -7,23 +7,24 @@ import { patch, textures } from './materials.js';
 // toroidal grid of cells; as you move, only the cells that scroll into view
 // are re-planted, so it streams cheaply at any speed.
 const CELL = 6;
-const GRID = 26;           // cells per side (~156 m)
+const GRID = 22;           // cells per side (~132 m)
 const PER = 30;            // clumps per cell
 
 export class GrassField {
-  constructor(scene, gen) {
+  constructor(scene, gen, density = 1) {
     this.scene = scene;
     this.gen = gen;
+    this.per = Math.max(6, Math.round(PER * density));
     const quads = [];
     for (let i = 0; i < 3; i++) {
       const q = new THREE.PlaneGeometry(1.0, 0.55, 1, 2).translate(0, 0.275, 0).rotateY((i * Math.PI) / 3);
       quads.push(q);
     }
     const geo = mergeQuads(quads);
-    const mat = patch(new THREE.MeshStandardMaterial({
-      map: textures().blade, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, metalness: 0,
-    }), { wind: true, fade: [48, 74], grass: true });
-    this.mesh = new THREE.InstancedMesh(geo, mat, GRID * GRID * PER);
+    const mat = patch(new THREE.MeshLambertMaterial({
+      map: textures().blade, alphaTest: 0.5, side: THREE.DoubleSide,
+    }), { wind: true, fade: [40, 62], grass: true });
+    this.mesh = new THREE.InstancedMesh(geo, mat, GRID * GRID * this.per);
     this.mesh.frustumCulled = false;
     this.mesh.receiveShadow = true;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -59,6 +60,7 @@ export class GrassField {
 
   plant(slot, cx, cz) {
     const { m, q, s, p, up, gen } = this;
+    const PER = this.per;
     const base = slot * PER;
     const roadNear = gen.net.nearest(cx * CELL + CELL / 2, cz * CELL + CELL / 2, CELL);
     for (let i = 0; i < PER; i++) {

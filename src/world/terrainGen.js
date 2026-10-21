@@ -98,7 +98,7 @@ export class TerrainGen {
     const cand = net.entriesInBox(ox - pad - 6, oz - pad - 6, ox + CHUNK + pad + 6, oz + CHUNK + pad + 6);
     const nearOf = (x, z) => {
       if (!cand.length) return null;
-      const b = net.scan(cand, x, z, null);
+      const b = net.scan(cand, x, z);
       return b && b.edgeDist <= BLEND_OUT + 2 ? b : null;
     };
 
@@ -158,6 +158,17 @@ export class TerrainGen {
   // The tree (if any) living in placement cell (gx, gz). Deterministic, so the
   // worker can draw it and the physics can collide with it independently.
   treeInCell(gx, gz) {
+    const key = (gx + 32768) * 65536 + (gz + 32768);
+    const cache = this.treeCache || (this.treeCache = new Map());
+    let t = cache.get(key);
+    if (t !== undefined) return t;
+    if (cache.size > 30000) cache.clear();
+    t = this.computeTree(gx, gz);
+    cache.set(key, t);
+    return t;
+  }
+
+  computeTree(gx, gz) {
     const seed = this.seedInt;
     const x = (gx + 0.1 + hash2(gx, gz, seed + 1) * 0.8) * TREE_CELL;
     const z = (gz + 0.1 + hash2(gx, gz, seed + 2) * 0.8) * TREE_CELL;

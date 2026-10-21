@@ -35,6 +35,35 @@ export class Route {
     this.length = this.s[this.n - 1];
   }
 
+  indexAt(s) {
+    let lo = 0, hi = this.n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.s[m] <= s) lo = m; else hi = m; }
+    return lo;
+  }
+
+  // Closest point on the route to (x, z), searching ±win metres around a
+  // hint (the rider's last known progress). Returns { s, d, tx, tz }.
+  nearestS(x, z, hint, win = 300) {
+    const i0 = Math.max(0, this.indexAt(hint - win)), i1 = Math.min(this.n - 2, this.indexAt(hint + win) + 1);
+    let bi = i0, bd = Infinity;
+    for (let i = i0; i <= i1; i++) {
+      const d = (this.x[i] - x) ** 2 + (this.z[i] - z) ** 2;
+      if (d < bd) { bd = d; bi = i; }
+    }
+    let best = { s: this.s[bi], d: Math.sqrt(bd), tx: 0, tz: 1 };
+    for (let i = Math.max(0, bi - 1); i <= Math.min(this.n - 2, bi); i++) {
+      const ax = this.x[i], az = this.z[i], ex = this.x[i + 1] - ax, ez = this.z[i + 1] - az;
+      const l2 = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2));
+      const d = Math.hypot(x - (ax + ex * t), z - (az + ez * t));
+      if (d <= best.d) {
+        const l = Math.sqrt(l2);
+        best = { s: this.s[i] + (this.s[i + 1] - this.s[i]) * t, d, tx: ex / l, tz: ez / l };
+      }
+    }
+    return best;
+  }
+
   at(s) {
     s = Math.max(0, Math.min(this.length - 0.01, s));
     let lo = 0, hi = this.n - 1;

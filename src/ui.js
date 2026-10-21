@@ -7,6 +7,23 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
 const km = (m) => (m / 1000).toFixed(1) + ' km';
 
+// Row of single-select chips. Returns { get, set }.
+export function chips(el, options, value, onChange) {
+  el.innerHTML = '';
+  let cur = value;
+  const btns = Object.entries(options).map(([k, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.onclick = () => { set(k); onChange?.(k); };
+    el.appendChild(b);
+    return [k, b];
+  });
+  const set = (k) => { cur = k; for (const [kk, b] of btns) b.classList.toggle('on', kk === k); };
+  set(value);
+  return { get: () => cur, set };
+}
+
 export function diffChip(spot) {
   const d = DIFFICULTY[spot.difficulty];
   return `<span class="chip diff" style="background:${d.color}">${stars(spot.difficulty)} ${d.label}</span>`;
@@ -48,8 +65,10 @@ export class UI {
     const mapState = {
       me: s.me, yaw: s.yaw, others: s.others, gps: s.nav?.gps, waypoint: s.nav && !s.nav.spot ? s.nav : null,
       race: s.race?.participant ? s.race.spot : null,
+      raceFrom: s.race?.participant ? s.race.progressS : 0,
+      raceNext: s.race?.participant ? s.race.next : 0,
     };
-    if (this.minimap && this.hudTick % 3 === 0) this.minimap.draw(mapState);
+    if (this.minimap && this.hudTick % 4 === 0) this.minimap.draw(mapState);
     if (this.bigMap && !$('#mapOverlay').classList.contains('hidden') && this.hudTick % 2 === 0) {
       this.bigMap.draw({ ...mapState, selected: this.selectedSpot });
     }
@@ -70,7 +89,10 @@ export class UI {
     // lobby countdown text
     if (s.lobby) {
       const left = Math.max(0, Math.ceil((s.lobby.endsAt - performance.now()) / 1000));
-      $('#lobbyText').innerHTML = `<b>${esc(s.lobby.spotObj.name)}</b> · ${s.lobby.members.length} ready · starts in ${left}s`;
+      const n = s.lobby.members.length;
+      $('#lobbyText').innerHTML = this.lobbyMember
+        ? `🏁 <b>${esc(s.lobby.spotObj.name)}</b> · race starts in <b>${left}s</b> · ${n} rider${n === 1 ? '' : 's'} ready`
+        : `<b>${esc(s.lobby.spotObj.name)}</b> · ${n} ready · starts in ${left}s · ride over to join`;
     }
 
     const bar = $('#raceBar');
@@ -124,6 +146,8 @@ export class UI {
     const bar = $('#lobbyBar');
     if (!lobby) { bar.classList.add('hidden'); return; }
     bar.classList.remove('hidden');
+    bar.classList.toggle('member', member);
+    this.lobbyMember = member;
     bar.title = names.join(', ');
     $('#lobbyGo').classList.toggle('hidden', !member);
     $('#lobbyGo').onclick = onGo;
@@ -151,6 +175,27 @@ export class UI {
     el.classList.remove('hidden');
     $('#cardClose').onclick = () => this.showSpotCard(null);
     $('#cardRoute').onclick = () => onRoute(spot);
+  }
+
+  // Banner for WRONG WAY / WRONG ROUTE / shortcut / TURN AROUND, with an arrow
+  // pointing where to go relative to the bike's heading.
+  guidance(state, rel, label) {
+    const el = $('#guide');
+    if (!state) { if (this.guideState) { el.classList.add('hidden'); this.guideState = null; } return; }
+    if (state !== this.guideState) {
+      this.guideState = state;
+      el.className = state;
+      const titles = { wrongway: 'WRONG WAY', wrongroute: 'WRONG ROUTE', shortcut: 'Shortcut', offroute: 'OFF ROUTE', turnaround: 'TURN AROUND' };
+      $('#guideTitle').textContent = titles[state];
+      // U-turn arrow for going backwards; warning triangle for leaving the route
+      $('#guideIcon').innerHTML = state === 'wrongway' || state === 'turnaround'
+        ? '<path d="M14 40 V20 a10 10 0 0 1 20 0 V30" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M26 28 L34 38 L42 28 Z" fill="currentColor"/>'
+        : '<path d="M24 5 L45 42 H3 Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><rect x="22" y="17" width="4" height="14" rx="2" fill="currentColor"/><circle cx="24" cy="36" r="2.6" fill="currentColor"/>';
+      $('#guideIcon').style.color = state === 'turnaround' ? '#38e8ff' : state === 'shortcut' || state === 'offroute' ? '#f2c14e' : '#ff6b6b';
+    }
+    $('#guideText').textContent = label;
+    $('#guideArrow').style.transform = 'rotate(' + ((-rel * 180) / Math.PI) + 'deg)';
+    el.classList.remove('hidden');
   }
 
   // ---- generic ----------------------------------------------------------------

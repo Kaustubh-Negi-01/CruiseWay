@@ -182,14 +182,14 @@ export class MapView {
 
     // race route or selected spot's route
     const routeSpot = o.race || o.selected;
-    if (routeSpot) this.polyline(routeSpot.route, '#ffcf3a', Math.max(3, 5 * Math.min(1, this.scale * 4)), 0.9);
+    if (routeSpot) this.polyline(routeSpot.route, '#ffcf3a', Math.max(3, 5 * Math.min(1, this.scale * 4)), 0.9, o.race ? o.raceFrom || 0 : 0);
     // GPS
     if (o.gps) this.path(o.gps.pts, '#38e8ff', Math.max(3.5, 6 * Math.min(1, this.scale * 4)));
 
     // spots
     for (const s of this.world.spots) this.spotIcon(s, s === o.selected, o.race === s);
     if (o.race) {
-      for (const cs of o.race.checkpoints) this.dot(o.race.route.at(cs), '#ffcf3a', 4, '#111');
+      o.race.checkpoints.forEach((cs, i) => { if (i >= (o.raceNext || 0)) this.dot(o.race.route.at(cs), '#ffcf3a', 4, '#111'); });
       this.flag(o.race.route.at(o.race.route.length - 1), '#ffffff', 'F');
     }
     if (o.waypoint) this.pin(o.waypoint);
@@ -198,7 +198,7 @@ export class MapView {
     ctx.restore();
   }
 
-  polyline(route, color, width, alpha = 1) {
+  polyline(route, color, width, alpha = 1, fromS = 0) {
     const ctx = this.ctx;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -206,12 +206,19 @@ export class MapView {
     ctx.lineWidth = width + 3;
     ctx.lineCap = ctx.lineJoin = 'round';
     const stride = Math.max(1, Math.floor(3 / Math.max(this.scale, 0.01) / 3));
+    const i0 = fromS > 0 ? route.indexAt(fromS) : 0;
     const go = () => {
       ctx.beginPath();
-      for (let i = 0; i < route.n; i += stride) {
-        const [x, y] = this.toScreen(route.x[i], route.z[i]);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      // start exactly at the rider's progress point, so the line shrinks behind you
+      const p = route.at(fromS);
+      let [x, y] = this.toScreen(p.x, p.z);
+      ctx.moveTo(x, y);
+      for (let i = i0 + 1; i < route.n; i += stride) {
+        [x, y] = this.toScreen(route.x[i], route.z[i]);
+        ctx.lineTo(x, y);
       }
+      [x, y] = this.toScreen(route.x[route.n - 1], route.z[route.n - 1]);
+      ctx.lineTo(x, y);
       ctx.stroke();
     };
     go();
