@@ -226,3 +226,8 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
 body.no-cursor, body.no-cursor * { cursor: none !important; }
 #stats { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); font: 600 12px ui-monospace, monospace;
   background: rgba(0,0,0,0.6); color: #9ff3c6; padding: 4px 10px; border-radius: 8px; white-space: nowrap; }
+
+/* ---------- sound settings ---------- */
+.sound-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.slider { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 12px; margin: 8px 0; font-size: 13px; color: var(--muted); }
+.slider input[type=range] { width: 100%; accent-color: var(--accent); padding: 0; border: 0; background: none; }

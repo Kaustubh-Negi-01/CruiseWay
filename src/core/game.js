@@ -4,6 +4,7 @@ import { Environment } from '../world/rendering/sky.js';
 import { Bike } from '../vehicle/physics.js';
 import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, EYE } from '../vehicle/bike.js';
 import { RaceMarkers } from '../race/markers.js';
+import { RaceBarriers } from '../race/barriers.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
@@ -40,9 +41,10 @@ const FINISH_GRACE = 60;    // seconds others get after the winner crosses
 // (sendAll), and every message to the host is handled locally when we are
 // the host (toHost).
 export class Game {
-  constructor(canvas, ui, input, { msaa = true, quality = 'auto', fpsCap = 60 } = {}) {
+  constructor(canvas, ui, input, { msaa = true, quality = 'auto', fpsCap = 60, sound = null } = {}) {
     this.ui = ui;
     this.input = input;
+    this.sound = sound;
     // anti-aliasing can only be chosen when the GL context is created
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: msaa, powerPreference: 'high-performance' });
     this.msaa = msaa;
@@ -96,6 +98,12 @@ export class Game {
     this.world.water.material.envMap = this.env.envMap;
     this.world.water.material.needsUpdate = true;
     this.car = new Bike(this.world);
+    this.car.onImpact = (kind, v) => {
+      if (!this.running) return;
+      if (kind === 'land') this.sound?.land(v);
+      else if (kind === 'tree') this.sound?.treeHit(v);
+      else if (kind === 'wall') this.sound?.wallHit(v);
+    };
     this.model = null;
     this.setModel(color);
     this.spawnHome();
@@ -221,6 +229,7 @@ export class Game {
   placeAt(p, yaw) {
     this.car.place(p.x, p.z, yaw);
     this.camPos = null;
+    if (this.barriers) this.wallS = this.barriers.route.nearestS(p.x, p.z, 0, 1e6, 0).s;
     // a teleport isn't "riding the wrong way": restart the guidance
     const r = this.race;
     if (r) r.wrongWay = 0;
@@ -319,6 +328,7 @@ export class Game {
     this.ticker.onmessage = () => this.netTick();
 
     this.running = true;
+    this.sound?.startRide();
     this.last = performance.now();
     const loop = () => {
       if (!this.running) return;
@@ -344,6 +354,9 @@ export class Game {
 
   stop() {
     this.running = false;
+    this.sound?.stopRide();
+    this.barriers?.dispose();
+    this.barriers = null;
     this.ticker?.terminate();
     cancelAnimationFrame(this.raf);
     if (this.isHost) this.net.broadcast({ t: 'bye' });
@@ -377,6 +390,8 @@ export class Game {
 
     const inp = this.input.read();
     this.car.update(dt, inp);
+    const c = this.car;
+    this.sound?.update({ speed: c.speed, throttle: c.frozen ? 0 : inp.throttle, braking: c.braking, slip: c.slip, surface: c.surface, onGround: c.onGround, lean: c.lean });
     this.car.applyTo(this.model);
     this.world.update(this.car.pos, this.race?.participant ? this.race.spot.id : -1);
     this.env.update(dt, this.car.pos);
@@ -384,6 +399,7 @@ export class Game {
     this.updateGhosts(now);
     if (this.race) this.updateRace(now);
     if (this.markers) this.markers.update(now / 1000);
+    if (this.barriers) this.barriers.update(dt, this.camera.position);
     this.checkWater(dt);
     this.checkSpots();
     this.updateNav(now);
@@ -414,6 +430,7 @@ export class Game {
       this.car.underwater += dt;
       if (this.car.underwater > 1.4) {
         this.ui.toast('Splash! Back on the road.');
+        this.sound?.splash();
         this.resetCar();
       }
     } else this.car.underwater = 0;
@@ -606,6 +623,7 @@ export class Game {
       if (this.nav && this.nav.spot === spot) this.nav = null;
       const busy = this.race ? `A race is running at ${this.world.spots[this.race.spot.id].name}. Try again when it ends.`
         : this.lobby && this.lobby.spot !== spot.id ? `Riders are gathering at ${this.world.spots[this.lobby.spot].name}.` : null;
+      this.sound?.prompt();
       this.ui.spotPrompt(spot, this.bestTimes[spot.id], busy, (yes) => {
         if (yes) this.toHost({ t: 'spot_join', spot: spot.id });
       });
@@ -948,6 +966,14 @@ export class Game {
     if (participant) {
       this.nav = null;
       this.markers.setTarget(1);
+      this.barriers?.dispose();
+      this.barriers = new RaceBarriers(this.scene, spot);
+      this.wallS = spot.startS;
+      this.car.constraint = (pos, vel) => {
+        const hit = this.barriers.constrain(pos, vel, this.wallS);
+        this.wallS = this.barriers.lastS;
+        return hit;
+      };
       const p = spot.route.at(spot.startS);
       this.placeAt(p, Math.atan2(p.tx, p.tz));
       this.car.frozen = true;
@@ -965,11 +991,13 @@ export class Game {
     r.phase = 'countdown';
     let n = 3;
     this.ui.countdown(n);
+    this.sound?.countdown(n);
     const tick = () => {
       if (this.race !== r) return;
       n--;
-      if (n > 0) { this.ui.countdown(n); setTimeout(tick, 1000); return; }
+      if (n > 0) { this.ui.countdown(n); this.sound?.countdown(n); setTimeout(tick, 1000); return; }
       this.ui.countdown('GO');
+      this.sound?.countdown('GO');
       r.phase = 'running';
       r.startTime = performance.now();
       this.car.frozen = false;
@@ -984,39 +1012,36 @@ export class Game {
     const cps = r.spot.checkpoints, route = r.spot.route;
     r.elapsed = (now - r.startTime) / 1000;
     const px = this.car.pos.x, pz = this.car.pos.z;
-    const near = (p) => Math.hypot(p.x - px, p.z - pz) < CP_RADIUS;
-    // Any gate ahead of you counts, so a shortcut that lands on a later
-    // checkpoint (or straight on the finish) is accepted.
-    const finish = route.at(route.length - 1);
-    if (near(finish)) {
-      r.finished = true;
-      r.finishTime = r.elapsed;
-      r.next = cps.length;
-      r.progressS = route.length;
-      this.markers.setTarget(-1);
-      this.ui.flash('Finished · ' + fmtTime(r.elapsed));
-      const best = this.bestTimes[r.spot.id];
-      if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
-      this.toHost({ t: 'race_cp', id: r.id, i: cps.length });
-      this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
+    // gates count in order: the barriers keep racers on the route
+    const tgt = r.next < cps.length ? route.at(cps[r.next]) : route.at(route.length - 1);
+    r.distToNext = Math.hypot(tgt.x - px, tgt.z - pz);
+    if (r.distToNext >= CP_RADIUS) return;
+    if (r.next < cps.length) {
+      r.next++;
+      r.progressS = Math.max(r.progressS, cps[r.next - 1]);
+      this.markers.setTarget(r.next + 1);
+      this.ui.flash('Checkpoint ' + r.next + '/' + cps.length);
+      this.sound?.checkpoint();
+      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
       return;
     }
-    for (let i = cps.length - 1; i >= r.next; i--) {
-      if (!near(route.at(cps[i]))) continue;
-      const skipped = i - r.next;
-      r.next = i + 1;
-      r.progressS = Math.max(r.progressS, cps[i]);
-      this.markers.setTarget(r.next + 1);
-      this.ui.flash(skipped > 0 ? 'Checkpoint ' + r.next + '/' + cps.length + ' · shortcut!' : 'Checkpoint ' + r.next + '/' + cps.length);
-      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
-      break;
-    }
-    const tgt = r.next < cps.length ? route.at(cps[r.next]) : finish;
-    r.distToNext = Math.hypot(tgt.x - px, tgt.z - pz);
+    r.finished = true;
+    r.finishTime = r.elapsed;
+    r.progressS = route.length;
+    this.markers.setTarget(-1);
+    // free to ride anywhere again once you're over the line
+    this.car.constraint = null;
+    this.ui.flash('Finished · ' + fmtTime(r.elapsed));
+    this.sound?.finish(false);
+    const best = this.bestTimes[r.spot.id];
+    if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
+    this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
   }
 
   endRaceLocal(msg) {
     if (this.markers) { this.markers.dispose(); this.markers = null; }
+    if (this.barriers) { this.barriers.dispose(); this.barriers = null; }
+    this.car.constraint = null;
     const r = this.race;
     this.race = null;
     this.car.frozen = false;
@@ -1024,7 +1049,10 @@ export class Game {
     this.ui.raceStandings(null);
     if (!r || !r.participant) return;
     if (msg.cancelled) this.ui.toast('The race was called off.');
-    else if (msg.standings.length) this.ui.results(this.world.spots[msg.spot], this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+    else if (msg.standings.length) {
+      if (msg.winner === this.selfId) this.sound?.finish(true);
+      this.ui.results(this.world.spots[msg.spot], this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+    }
   }
 }
 

@@ -36,6 +36,13 @@ export class Bike {
     this.underwater = 0;     // seconds spent submerged
     // Physics ticks at a fixed 120 Hz; what we draw is interpolated between
     // the last two ticks so motion is smooth at any frame rate.
+    // Hooks: the game sets these. constraint(pos, vel) keeps the bike inside
+    // race barriers; events() receives { land, bump, wall } impacts for sound.
+    this.constraint = null;
+    this.onImpact = null;
+    this.slip = 0;            // sideways sliding speed (m/s), for tyre sounds
+    this.airTime = 0;
+    this.braking = 0;
     this.prevPos = new THREE.Vector3();
     this.prevYaw = 0;
     this.renderPos = new THREE.Vector3();
@@ -142,6 +149,8 @@ export class Bike {
     let grip = this.surface === 1 ? s.grip : this.surface === 2 ? s.dirtGrip : s.offGrip;
     if (input.handbrake) { grip = s.handbrakeGrip; vf -= vf * 0.5 * dt; }
     vl *= Math.exp(-grip * traction * dt);
+    this.slip = this.onGround ? Math.abs(vl) : 0;
+    this.braking = this.onGround && vf > 2 ? Math.max(input.brake, input.handbrake ? 0.7 : 0) : 0;
 
     const sp = Math.abs(vf);
     const steerAmt = this.steer * s.steer * Math.min(1, sp / 3) / (1 + sp / 26);
@@ -162,11 +171,18 @@ export class Bike {
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.collideTrees();
+    if (this.constraint) {
+      const hit = this.constraint(this.pos, this.vel);
+      if (hit > 0.5) this.onImpact?.('wall', hit);
+    }
 
     const h = this.world.heightAt(this.pos.x, this.pos.z);
     this.vel.y -= G * dt;
     this.pos.y += this.vel.y * dt;
     if (this.pos.y <= h) {
+      // touching down after some air: report how hard we landed
+      if (this.airTime > 0.25) this.onImpact?.('land', Math.min(20, -this.vel.y));
+      this.airTime = 0;
       this.pos.y = h;
       this.vel.y = clamp((h - this.lastGround) / dt, -30, 9);
       this.onGround = true;
@@ -174,6 +190,7 @@ export class Bike {
     } else {
       this.onGround = this.pos.y - h < 0.12;
       if (this.onGround) this.world.normalAt(this.pos.x, this.pos.z, this.normal);
+      else this.airTime += dt;
     }
     this.lastGround = h;
   }
@@ -195,6 +212,7 @@ export class Bike {
         this.vel.x *= 0.55;
         this.vel.z *= 0.55;
         this.bumped = performance.now();
+        if (-vn > 1) this.onImpact?.('tree', -vn);
       }
     }
   }
