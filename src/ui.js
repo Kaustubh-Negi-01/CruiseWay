@@ -1,42 +1,33 @@
 import { MapView } from './map.js';
 import { fmtTime } from './game.js';
+import { DIFFICULTY } from './world/spots.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+const km = (m) => (m / 1000).toFixed(1) + ' km';
 
-// Build a row of single-select chips. Returns { get, set }.
-export function chips(el, options, value, onChange) {
-  el.innerHTML = '';
-  let cur = value;
-  const btns = Object.entries(options).map(([k, label]) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.onclick = () => { set(k); onChange?.(k); };
-    el.appendChild(b);
-    return [k, b];
-  });
-  const set = (k) => { cur = k; for (const [kk, b] of btns) b.classList.toggle('on', kk === k); };
-  set(value);
-  return { get: () => cur, set };
+export function diffChip(spot) {
+  const d = DIFFICULTY[spot.difficulty];
+  return `<span class="chip diff" style="background:${d.color}">${stars(spot.difficulty)} ${d.label}</span>`;
 }
 
-// HUD + overlays used by the Game while driving.
+// HUD + overlays used by the Game while riding.
 export class UI {
   constructor() {
     this.minimap = null;
+    this.bigMap = null;
     this.hudTick = 0;
     this.fatalShown = false;
+    this.selectedSpot = null;
   }
 
   attachWorld(world) {
-    this.minimap = new MapView($('#minimap'), world);
-    this.minimap.scale = 0.22;
+    this.minimap = new MapView($('#minimap'), world, { rotate: true, round: true });
+    this.minimap.scale = 0.2;
   }
 
-  setWorldCode(code) {
-    $('#worldCode').textContent = code;
-  }
+  setWorldCode(code) { $('#worldCode').textContent = code; }
 
   setRoster(list, selfId, hostId) {
     const rows = list
@@ -46,36 +37,123 @@ export class UI {
         <span class="nm">${esc(p.name)}${p.id === hostId ? ' 👑' : ''}${p.id === selfId ? ' (you)' : ''}</span>
         <span class="wins" title="Race wins">${p.wins}🏆</span></li>`)
       .join('');
-    $('#roster').innerHTML = `<li class="head"><span class="nm">Drivers ${list.length}/6</span><span>wins</span></li>` + rows;
+    $('#roster').innerHTML = `<li class="head"><span class="nm">Riders ${list.length}/6</span><span>wins</span></li>` + rows;
   }
 
   hud(s) {
     $('#speed').textContent = Math.round(s.speed);
     $('#odo').textContent = (s.odometer / 1000).toFixed(1);
-    $('#surface').textContent = s.onRoad ? '' : 'off-road';
+    $('#surface').textContent = s.surface;
     this.hudTick++;
-    if (this.minimap && this.hudTick % 4 === 0) {
-      this.minimap.draw({ me: s.me, heading: s.yaw, others: s.others, race: s.race });
+    const mapState = {
+      me: s.me, yaw: s.yaw, others: s.others, gps: s.nav?.gps, waypoint: s.nav && !s.nav.spot ? s.nav : null,
+      race: s.race?.participant ? s.race.spot : null,
+    };
+    if (this.minimap && this.hudTick % 3 === 0) this.minimap.draw(mapState);
+    if (this.bigMap && !$('#mapOverlay').classList.contains('hidden') && this.hudTick % 2 === 0) {
+      this.bigMap.draw({ ...mapState, selected: this.selectedSpot });
     }
-    if (this.bigMap && !$('#mapOverlay').classList.contains('hidden') && this.hudTick % 3 === 0) {
-      this.bigMap.draw({ me: s.me, heading: s.yaw, others: s.others, race: s.race });
+
+    // GPS indicator: arrow relative to where you're facing
+    const nav = $('#nav');
+    if (s.nav && !s.race?.participant) {
+      nav.classList.remove('hidden');
+      let rel = s.nav.bearing - s.yaw;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      // bearing is measured toward +x; on screen +x is to the left, so flip
+      $('#navArrow').parentNode.style.transform = `rotate(${(-rel * 180) / Math.PI}deg)`;
+      const d = s.nav.gps ? Math.max(s.nav.gps.length, s.nav.dist) : s.nav.dist;
+      $('#navDist').textContent = d > 950 ? km(d) : `${Math.round(d)} m`;
+      $('#navName').textContent = s.nav.spot ? s.nav.spot.name : 'Waypoint';
+    } else nav.classList.add('hidden');
+
+    // lobby countdown text
+    if (s.lobby) {
+      const left = Math.max(0, Math.ceil((s.lobby.endsAt - performance.now()) / 1000));
+      $('#lobbyText').innerHTML = `<b>${esc(s.lobby.spotObj.name)}</b> · ${s.lobby.members.length} ready · starts in ${left}s`;
     }
+
     const bar = $('#raceBar');
     const r = s.race;
-    if (r && r.participant && (r.phase === 'running' || r.phase === 'countdown' || r.phase === 'spawn')) {
+    if (r && r.participant) {
       bar.classList.remove('hidden');
-      const total = r.cps.length;
+      const total = r.spot.checkpoints.length;
       const t = r.finished ? r.finishTime : r.phase === 'running' ? r.elapsed || 0 : 0;
       const next = r.finished ? 'Finished!' : r.next < total ? `Checkpoint ${r.next + 1}/${total}` : 'Finish';
       bar.innerHTML = `<b>${fmtTime(t)}</b><span>Next <strong>${next}</strong></span>` +
-        (r.finished || r.distToNext == null ? '' : `<span><strong>${Math.round(r.distToNext)} m</strong> away</span>`);
-    } else if (r && !r.participant) {
+        (r.finished || r.distToNext == null ? '' : `<span><strong>${Math.round(r.distToNext)} m</strong></span>`);
+    } else if (r) {
       bar.classList.remove('hidden');
-      bar.innerHTML = '<span>Race in progress — you are free-roaming</span>';
+      bar.innerHTML = `<span>Race running at <strong>${esc(r.spot.name)}</strong></span>`;
     } else {
       bar.classList.add('hidden');
     }
   }
+
+  // ---- race spots -----------------------------------------------------------
+
+  spotPrompt(spot, best, busy, cb) {
+    const el = $('#spotPrompt');
+    $('#spName').textContent = spot.name;
+    $('#spMeta').innerHTML = `${diffChip(spot)}<span class="chip">${km(spot.length)}</span>`
+      + `<span class="chip">${Math.round(spot.dirtFrac * 100)}% dirt</span>`
+      + `<span class="chip">${Math.round(spot.climb)} m climb</span>`
+      + (best != null ? `<span class="chip">best ${fmtTime(best)}</span>` : '');
+    const busyEl = $('#spBusy');
+    busyEl.classList.toggle('hidden', !busy);
+    busyEl.textContent = busy || '';
+    $('#spYes').classList.toggle('hidden', !!busy);
+    $('#spNo').textContent = busy ? 'OK' : 'Not now';
+    el.classList.remove('hidden');
+    const done = (yes) => { el.classList.add('hidden'); cb(yes); };
+    $('#spYes').onclick = () => done(true);
+    $('#spNo').onclick = () => done(false);
+    this.promptKeys = (e) => {
+      if (el.classList.contains('hidden')) return;
+      if (e.code === 'Enter' && !busy) done(true);
+      if (e.code === 'Backspace') done(false);
+    };
+    removeEventListener('keydown', this.promptKeysBound);
+    this.promptKeysBound = this.promptKeys;
+    addEventListener('keydown', this.promptKeysBound);
+  }
+
+  closeSpotPrompt() { $('#spotPrompt').classList.add('hidden'); }
+
+  lobby(lobby, member, names, onGo) {
+    const bar = $('#lobbyBar');
+    if (!lobby) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    bar.title = names.join(', ');
+    $('#lobbyGo').classList.toggle('hidden', !member);
+    $('#lobbyGo').onclick = onGo;
+  }
+
+  showSpotCard(spot, best, onRoute) {
+    this.selectedSpot = spot;
+    const el = $('#spotCard');
+    if (!spot) { el.classList.add('hidden'); return; }
+    const d = DIFFICULTY[spot.difficulty];
+    const pct = (v) => `<div class="bar"><i style="width:${Math.round(Math.min(1, v) * 100)}%;background:${d.color}"></i></div>`;
+    el.innerHTML = `
+      <div class="sp-kicker">RACE SPOT</div>
+      <h3>${esc(spot.name)}</h3>
+      <div class="stars" style="color:${d.color}">${stars(spot.difficulty)} <span style="color:var(--ink);font-size:14px">${d.label}</span></div>
+      <dl>
+        <dt>Distance</dt><dd>${km(spot.length)}</dd>
+        <dt>Checkpoints</dt><dd>${spot.checkpoints.length}</dd>
+        <dt>Twistiness</dt><dd>${pct(spot.curvy / 5)}</dd>
+        <dt>Climbing</dt><dd>${Math.round(spot.climb)} m</dd>
+        <dt>Dirt</dt><dd>${Math.round(spot.dirtFrac * 100)}%</dd>
+        <dt>Your best</dt><dd>${best != null ? fmtTime(best) : '—'}</dd>
+      </dl>
+      <div class="row"><button class="btn small" id="cardClose">Close</button><button class="btn small primary" id="cardRoute">Set route</button></div>`;
+    el.classList.remove('hidden');
+    $('#cardClose').onclick = () => this.showSpotCard(null);
+    $('#cardRoute').onclick = () => onRoute(spot);
+  }
+
+  // ---- generic ----------------------------------------------------------------
 
   toast(text) {
     const d = document.createElement('div');
@@ -107,54 +185,19 @@ export class UI {
     $('#fatal').classList.remove('hidden');
   }
 
-  invite(msg, reply) {
-    const r = msg.race;
-    $('#inviteText').innerHTML = `<b>${esc(msg.host)}</b> wants to race: <b>${(r.length / 1000).toFixed(1)} km</b> with
-      ${r.cps.length} checkpoint${r.cps.length === 1 ? '' : 's'}. You'll be moved to the start line.`;
-    $('#invite').classList.remove('hidden');
-    const bar = $('#inviteTimer');
-    const start = performance.now();
-    const total = msg.seconds * 1000;
-    clearInterval(this.inviteT);
-    this.inviteT = setInterval(() => {
-      const left = Math.max(0, 1 - (performance.now() - start) / total);
-      bar.style.width = left * 100 + '%';
-      if (left <= 0) done(false);
-    }, 100);
-    const done = (yes) => {
-      clearInterval(this.inviteT);
-      $('#invite').classList.add('hidden');
-      reply(yes);
-    };
-    $('#acceptBtn').onclick = () => done(true);
-    $('#declineBtn').onclick = () => done(false);
-  }
-
-  closeInvite() {
-    clearInterval(this.inviteT);
-    $('#invite').classList.add('hidden');
-  }
-
-  hostInviteStatus(list) {
-    const el = $('#inviteStatus');
-    if (!list) { el.innerHTML = ''; return; }
-    const icon = { yes: '✅', no: '❌', wait: '⏳' };
-    el.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">Waiting for replies…</div>' +
-      list.map((p) => `<div>${icon[p.reply]} ${esc(p.name)}</div>`).join('');
-  }
-
   raceStandings(list, race) {
     const el = $('#standings');
-    if (!list || !race) { el.classList.add('hidden'); return; }
+    if (!list || !race || list.length < 2) { el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
-    const total = race.cps.length + 1;
+    const total = race.spot.checkpoints.length + 1;
     el.innerHTML = list.map((s, i) => `<div class="${s.me ? 'me' : ''}"><span>${i + 1}.</span>
       <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}</span>
       <span class="t">${s.time != null ? fmtTime(s.time) : s.left ? 'left' : `${s.cp}/${total}`}</span></div>`).join('');
   }
 
-  results(list, iWon) {
-    $('#resultsTitle').textContent = iWon ? '🏆 You won!' : 'Race results';
+  results(spot, list, iWon, solo) {
+    $('#resultsTitle').textContent = solo ? 'Run complete' : iWon ? '🏆 You won!' : 'Race results';
+    $('#resultsSub').textContent = `${spot.name} · ${km(spot.length)} · ${DIFFICULTY[spot.difficulty].label}`;
     $('#resultsList').innerHTML = list.map((s, i) => `<li><span class="pos">${i + 1}</span>
       <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}${s.me ? ' (you)' : ''}</span>
       <span class="t">${s.time != null ? fmtTime(s.time) : 'DNF'}</span></li>`).join('');

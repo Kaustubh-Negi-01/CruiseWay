@@ -63,13 +63,20 @@
       </button>
       <ul id="roster"></ul>
       <div id="hostTools" class="hidden">
-        <button class="btn small primary" id="raceBtn">🏁 Start a race</button>
         <button class="btn small danger hidden" id="endRaceBtn">End race</button>
-        <div id="inviteStatus"></div>
       </div>
     </div>
     <canvas id="minimap" width="200" height="200"></canvas>
     <div id="raceBar" class="hidden"></div>
+    <div id="lobbyBar" class="hidden"><span id="lobbyText"></span><button class="btn small primary hidden" id="lobbyGo">Start now</button></div>
+    <div id="nav" class="hidden"><svg viewBox="0 0 40 40" width="34" height="34"><path id="navArrow" d="M20 4 L31 32 L20 25 L9 32 Z" fill="#38e8ff" stroke="#06222a" stroke-width="2" stroke-linejoin="round"/></svg><div><b id="navDist"></b><small id="navName"></small></div></div>
+    <div id="spotPrompt" class="hidden">
+      <div class="sp-kicker">READY TO RACE?</div>
+      <div class="sp-name" id="spName"></div>
+      <div class="sp-meta" id="spMeta"></div>
+      <div class="sp-busy hidden" id="spBusy"></div>
+      <div class="row"><button class="btn" id="spNo">Not now</button><button class="btn primary" id="spYes">Race</button></div>
+    </div>
     <div id="standings" class="hidden"></div>
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div></div>
     <div id="countdown"></div>
@@ -83,63 +90,38 @@
   </div>
 
   <!-- ===== Overlays ===== -->
-  <div id="invite" class="modal hidden">
-    <div class="card">
-      <h2>🏁 Race invite</h2>
-      <p id="inviteText"></p>
-      <div class="timer"><div id="inviteTimer"></div></div>
-      <div class="row">
-        <button class="btn" id="declineBtn">Not now</button>
-        <button class="btn primary" id="acceptBtn">I'm in</button>
-      </div>
-    </div>
-  </div>
-
   <div id="results" class="modal hidden">
     <div class="card">
       <h2 id="resultsTitle">Results</h2>
+      <p id="resultsSub" class="hint"></p>
       <ol id="resultsList" class="results"></ol>
-      <button class="btn primary" id="resultsOk">Keep driving</button>
+      <button class="btn primary" id="resultsOk">Keep riding</button>
     </div>
   </div>
 
-  <div id="raceSetup" class="modal hidden">
-    <div class="card wide">
-      <h2>Set up a race</h2>
-      <p class="hint">Click the road to place the <b>start</b>, then click again for the <b>finish</b>. Drag to pan, scroll to zoom. Players can take any route — they just have to pass every checkpoint.</p>
-      <canvas id="setupMap" width="720" height="420"></canvas>
-      <div class="quick">
-        <span>Quick:</span>
-        <button class="btn small" data-quick="3000">From me · 3 km</button>
-        <button class="btn small" data-quick="6000">From me · 6 km</button>
-        <button class="btn small" data-quick="10000">From me · 10 km</button>
-        <button class="btn small" id="clearPicks">Clear</button>
-      </div>
-      <div class="opt"><span>Checkpoints</span><div class="chips" data-opt="spacing"></div></div>
-      <p id="setupSummary" class="summary"></p>
-      <div class="row">
-        <button class="btn" id="setupCancel">Cancel</button>
-        <button class="btn primary" id="setupSend" disabled>Send race invite</button>
-      </div>
+  <div id="mapOverlay" class="hidden">
+    <canvas id="bigMap"></canvas>
+    <div class="map-top">
+      <h2>Map</h2>
+      <span>Click a <b>race spot</b> for details · click anywhere to drop a waypoint · drag / scroll · <kbd>M</kbd> to close</span>
     </div>
-  </div>
-
-  <div id="mapOverlay" class="modal hidden">
-    <div class="card wide">
-      <h2>Map <small>(M to close · drag / scroll)</small></h2>
-      <canvas id="bigMap" width="900" height="560"></canvas>
+    <div class="map-legend">
+      <span><i class="lg paved"></i>Road</span><span><i class="lg dirt"></i>Dirt road</span><span><i class="lg gps"></i>Your route</span>
+      <button class="btn small" id="clearRoute">Clear route</button>
+      <button class="btn small" id="centerMe">Centre on me</button>
     </div>
+    <div id="spotCard" class="hidden"></div>
   </div>
 
   <div id="pause" class="modal hidden">
     <div class="card">
       <h2>Paused <small>(the world keeps going for everyone else)</small></h2>
       <ul class="keys">
-        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — drive</li>
-        <li><kbd>Space</kbd> — handbrake (drift)</li>
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — ride</li>
+        <li><kbd>Space</kbd> — rear brake (slide)</li>
         <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
         <li><kbd>C</kbd> — change camera</li>
-        <li><kbd>M</kbd> — map</li>
+        <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
         <li>Gamepad: stick steer · RT/LT gas/brake · A handbrake · Y reset · B camera</li>
       </ul>
       <div class="row">

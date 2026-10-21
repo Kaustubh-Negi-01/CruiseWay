@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { hash2 } from './noise.js';
-import { ROAD_HALF_WIDTH as W } from './road.js';
+
 import { patch, textures } from './materials.js';
 
 // Dense grass clumps in a ring around the player. The area is split into a
@@ -60,17 +60,19 @@ export class GrassField {
   plant(slot, cx, cz) {
     const { m, q, s, p, up, gen } = this;
     const base = slot * PER;
-    const roadNear = gen.road.nearest(cx * CELL + CELL / 2, cz * CELL + CELL / 2, CELL + W + 2);
+    const roadNear = gen.net.nearest(cx * CELL + CELL / 2, cz * CELL + CELL / 2, CELL);
     for (let i = 0; i < PER; i++) {
       const x = (cx + hash2(cx * PER + i, cz, 91)) * CELL;
       const z = (cz + hash2(cx * PER + i, cz, 92)) * CELL;
       let sc = 0.6 + hash2(cx * PER + i, cz, 93) * 0.8;
       if (roadNear) {
-        const d = gen.road.nearest(x, z, W + 3);
-        if (d && d.dist < W + 0.5) sc = 0;
-        else if (d && d.dist < W + 2.2) sc *= 0.5; // short verge on the gravel shoulder
+        const d = gen.net.nearest(x, z, 3);
+        if (d && d.edgeDist < 0.5) sc = 0;
+        else if (d && d.edgeDist < 2.2) sc *= 0.5; // short verge on the shoulder
       }
-      p.set(x, gen.heightAt(x, z) - 0.05, z);
+      const y = gen.heightAt(x, z);
+      if (y < 1.4) sc = 0; // no grass on beaches or underwater
+      p.set(x, y - 0.05, z);
       q.setFromAxisAngle(up, hash2(cx * PER + i, cz, 94) * Math.PI * 2);
       s.set(sc, sc * (0.75 + hash2(cx * PER + i, cz, 95) * 0.6), sc);
       this.mesh.setMatrixAt(base + i, m.compose(p, q, s));

@@ -30,6 +30,10 @@ export class Bike {
     this.acc = 0;
     this.lastGround = 0;
     this.odometer = 0;
+    this.surface = 1;        // 0 grass/open ground, 1 tarmac, 2 dirt
+    this.prevY = 0;
+    this.groundVy = 0;
+    this.underwater = 0;     // seconds spent submerged
   }
 
   get speed() { return Math.hypot(this.vel.x, this.vel.z); }
@@ -46,6 +50,9 @@ export class Bike {
     this.lastGround = y;
     this.bodyY = y;
     this.bodyVy = 0;
+    this.prevY = y;
+    this.groundVy = 0;
+    this.underwater = 0;
     this.onGround = true;
     this.world.normalAt(x, z, this.normal);
     this.smoothNormal.copy(this.normal);
@@ -57,12 +64,21 @@ export class Bike {
       this.step(FIXED, input);
       this.acc -= FIXED;
     }
-    this.smoothNormal.lerp(this.normal, 1 - Math.exp(-dt * 7)).normalize();
-    // suspension: critically damped spring toward the physics height
-    const k = 140, c = 2 * Math.sqrt(k);
-    this.bodyVy += ((this.pos.y - this.bodyY) * k - this.bodyVy * c) * dt;
+    this.smoothNormal.lerp(this.normal, 1 - Math.exp(-dt * 12)).normalize();
+    // Suspension: a damped spring that tracks the wheels' height AND vertical
+    // speed, so a steady climb settles at zero offset (no sinking into the
+    // road) and only sudden changes in slope get softened.
+    if (dt > 0) {
+      const vy = (this.pos.y - this.prevY) / dt;
+      this.groundVy += (vy - this.groundVy) * (1 - Math.exp(-dt * 30));
+    }
+    this.prevY = this.pos.y;
+    const k = 220, c = 2 * Math.sqrt(k);
+    this.bodyVy += ((this.pos.y - this.bodyY) * k + (this.groundVy - this.bodyVy) * c) * dt;
     this.bodyY += this.bodyVy * dt;
-    if (Math.abs(this.pos.y - this.bodyY) > 0.6) this.bodyY = this.pos.y - Math.sign(this.pos.y - this.bodyY) * 0.6;
+    // never sit below the road surface, and never float far above it
+    if (this.bodyY < this.pos.y - 0.05) { this.bodyY = this.pos.y - 0.05; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
+    if (this.bodyY > this.pos.y + 0.35) this.bodyY = this.pos.y + 0.35;
 
     const vf = this.forwardSpeed;
     this.wheelSpin += (vf / 0.31) * dt;
@@ -83,9 +99,11 @@ export class Bike {
     const rate = Math.abs(steerTarget) > Math.abs(this.steer) ? 3.2 : 6;
     this.steer += (steerTarget - this.steer) * (1 - Math.exp(-dt * rate));
 
-    this.onRoad = this.world.isOnRoad(this.pos.x, this.pos.z);
+    this.surface = this.world.surfaceAt(this.pos.x, this.pos.z);
+    this.onRoad = this.surface !== 0;
     const traction = this.onGround ? 1 : 0.04;
-    const top = s.maxSpeed * (this.onRoad ? 1 : s.offTop);
+    const wet = this.pos.y < -0.5;   // riding into the sea or a lake
+    const top = s.maxSpeed * (this.surface === 1 ? 1 : this.surface === 2 ? s.dirtTop : s.offTop) * (wet ? 0.25 : 1);
 
     if (input.throttle > 0) {
       if (vf < -0.5) vf += s.brake * input.throttle * dt * traction;
@@ -98,12 +116,12 @@ export class Bike {
     const parked = this.onGround && !input.throttle && !input.brake && Math.abs(vf) < 1;
     if (parked) vf *= Math.exp(-6 * dt);
     if (this.onGround) {
-      const drag = 0.02 + (this.onRoad ? 0 : s.offDrag) + 0.0007 * Math.abs(vf);
+      const drag = 0.02 + (this.surface === 1 ? 0 : this.surface === 2 ? s.dirtDrag : s.offDrag) + 0.0007 * Math.abs(vf) + (wet ? 1.5 : 0);
       vf -= vf * drag * dt;
       if (vf > top) vf += (top - vf) * (1 - Math.exp(-dt * 1.5)); // ease down when leaving the road fast
     }
 
-    let grip = this.onRoad ? s.grip : s.offGrip;
+    let grip = this.surface === 1 ? s.grip : this.surface === 2 ? s.dirtGrip : s.offGrip;
     if (input.handbrake) { grip = s.handbrakeGrip; vf -= vf * 0.5 * dt; }
     vl *= Math.exp(-grip * traction * dt);
 

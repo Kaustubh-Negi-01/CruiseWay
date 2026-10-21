@@ -144,3 +144,60 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
 .speedo .trip { margin-top: 2px; font-size: 13px; color: rgba(255,255,255,.8); }
 .speedo .trip b { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 .speedo em { display: block; font-style: normal; font-size: 12px; color: #f0c48a; min-height: 1em; margin-top: 2px; }
+
+/* ---------- race spot prompt (bottom centre) ---------- */
+#spotPrompt { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(380px, calc(100vw - 32px));
+  background: rgba(14,16,20,0.86); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; pointer-events: auto;
+  backdrop-filter: blur(10px); box-shadow: 0 16px 40px rgba(0,0,0,.45); animation: rise .35s ease-out; }
+@keyframes rise { from { transform: translate(-50%, 20px); opacity: 0; } }
+.sp-kicker { font: 800 12px system-ui; letter-spacing: .22em; color: var(--accent); }
+.sp-name { font: 800 24px/1.2 system-ui; margin: 4px 0 6px; }
+.sp-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); }
+.sp-meta .chip { padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--ink); }
+.sp-meta .diff { color: #111; font-weight: 700; }
+.sp-busy { margin-top: 10px; font-size: 14px; color: #f0c48a; }
+#spotPrompt .row { margin-top: 12px; }
+
+/* ---------- lobby banner ---------- */
+#lobbyBar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center;
+  background: rgba(14,16,20,0.82); border: 1px solid var(--line); border-radius: 999px; padding: 8px 10px 8px 18px; font-size: 14px;
+  pointer-events: auto; white-space: nowrap; max-width: calc(100vw - 440px); }
+#lobbyBar b { color: var(--accent); }
+
+/* ---------- GPS indicator ---------- */
+#nav { position: absolute; top: 224px; right: 14px; width: 200px; display: flex; gap: 10px; align-items: center; justify-content: center;
+  background: rgba(14,16,20,0.72); border: 1px solid var(--line); border-radius: 14px; padding: 6px 12px; }
+#nav svg { transition: transform .1s linear; flex: none; }
+#nav b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+#nav small { display: block; font-size: 12px; color: var(--muted); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#standings { top: 290px; }
+
+/* ---------- full-screen map ---------- */
+#mapOverlay { position: fixed; inset: 0; background: #12343c; z-index: 5; }
+#bigMap { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.map-top { position: absolute; top: 14px; left: 16px; right: 16px; display: flex; gap: 14px; align-items: baseline; pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0,0,0,.6); flex-wrap: wrap; }
+.map-top h2 { margin: 0; font: 900 26px system-ui; letter-spacing: .08em; }
+.map-top span { font-size: 13px; color: rgba(255,255,255,.85); }
+.map-legend { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  background: rgba(14,16,20,0.78); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; font-size: 13px; }
+.map-legend span { display: flex; align-items: center; gap: 6px; }
+.lg { display: inline-block; width: 22px; height: 4px; border-radius: 2px; }
+.lg.paved { background: #f1efe8; box-shadow: 0 0 0 1px #222; }
+.lg.dirt { background: repeating-linear-gradient(90deg, #d9a35f 0 5px, transparent 5px 8px); }
+.lg.gps { background: #38e8ff; }
+#spotCard { position: absolute; right: 16px; top: 64px; width: min(320px, calc(100vw - 32px)); background: rgba(14,16,20,0.9);
+  border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; box-shadow: 0 16px 40px rgba(0,0,0,.45); }
+#spotCard h3 { margin: 6px 0 4px; font: 800 22px system-ui; }
+#spotCard .stars { font-size: 16px; letter-spacing: 2px; }
+#spotCard dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0; font-size: 14px; }
+#spotCard dt { color: var(--muted); }
+#spotCard dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+#spotCard .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; margin-top: 4px; }
+#spotCard .bar i { display: block; height: 100%; }
+
+@media (max-width: 640px) {
+  #nav { top: 150px; width: 130px; }
+  #lobbyBar { max-width: calc(100vw - 24px); top: auto; bottom: 200px; white-space: normal; border-radius: 14px; }
+  #spotPrompt { bottom: 200px; }
+}

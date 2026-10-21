@@ -4,7 +4,7 @@ import { ATMOS, raw, textures } from './materials.js';
 // Golden-hour lighting and a sky dome with drifting clouds. The dome's
 // horizon uses the same haze function as the terrain so they meet cleanly.
 export class Environment {
-  constructor(scene) {
+  constructor(scene, renderer) {
     this.scene = scene;
     scene.background = null;
     scene.fog = null;
@@ -76,6 +76,23 @@ export class Environment {
     this.skyMesh.frustumCulled = false;
     this.skyMesh.renderOrder = -1;
     scene.add(this.skyMesh);
+
+    // Reflection map of this sky (plus a dark land disc below the horizon) for
+    // the chrome bike and the water.
+    const envScene = new THREE.Scene();
+    envScene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), this.skyMat));
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(48, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x2a2a18 }),
+    );
+    ground.position.y = -2;
+    envScene.add(ground);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    this.envTarget = pmrem.fromScene(envScene, 0, 0.1, 200);
+    this.envMap = this.envTarget.texture;
+    pmrem.dispose();
+    ground.geometry.dispose();
+    ground.material.dispose();
   }
 
   update(dt, focus) {
@@ -89,6 +106,7 @@ export class Environment {
   }
 
   dispose() {
+    this.envTarget.dispose();
     for (const o of [this.hemi, this.sun, this.sun.target, this.skyMesh]) {
       this.scene.remove(o);
       o.geometry?.dispose();
