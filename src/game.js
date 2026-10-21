@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Environment } from './world/sky.js';
 import { Bike } from './physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment } from './bike.js';
+import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, EYE } from './bike.js';
 import { RaceMarkers } from './markers.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from './world/network.js';
 
@@ -10,8 +10,21 @@ const SEND_HZ = 15;
 const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts
 const CP_RADIUS = 22;
 const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
-const LOBBY_SECONDS = 15;   // gathering window when others are in the world
-const SOLO_LOBBY = 3;
+const LOBBY_SECONDS = 15;   // gathering window before a race (any member can start early)
+const NOSE = new THREE.Vector3(0, 0.62, 1.34);
+const ROLL_Z = new THREE.Quaternion();
+const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.07);
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion();
+
+// Graphics presets. 'auto' starts at 1x and lets the resolution scaler trade
+// sharpness for a steady frame rate.
+export const QUALITY = {
+  auto:   { label: 'Auto',   maxPR: 1.25, minPR: 0.6,  shadow: 1024, grass: 0.8 },
+  high:   { label: 'High',   maxPR: 1.5,  minPR: 1.5,  shadow: 2048, grass: 1.0 },
+  medium: { label: 'Medium', maxPR: 1.0,  minPR: 1.0,  shadow: 1024, grass: 0.7 },
+  low:    { label: 'Low',    maxPR: 0.75, minPR: 0.75, shadow: 0,    grass: 0.4 },
+};
 const FINISH_GRACE = 60;    // seconds others get after the winner crosses
 
 // Game owns the 3D scene, the local bike, the ghosts, navigation, and the
@@ -24,12 +37,19 @@ export class Game {
     this.ui = ui;
     this.input = input;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.quality = 'auto';
+    this.pr = 1;
+    this.frameAvg = 1 / 60;
+    this.drsAt = 0;
+    this.prCeiling = 9;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 9000);
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.08, 9000);
+    this.camQuat = new THREE.Quaternion();
+    this.camRoll = 0;
     this.camMode = 0;
     this.running = false;
     this.previewing = false;
@@ -38,7 +58,7 @@ export class Game {
     this.resize();
 
     input.on('reset', (d) => d && this.running && this.resetCar());
-    input.on('camera', (d) => { if (d) this.camMode = (this.camMode + 1) % 3; });
+    input.on('camera', (d) => { if (d) { this.camMode = (this.camMode + 1) % 4; this.camPos = null; } });
   }
 
   resize() {
@@ -67,6 +87,47 @@ export class Game {
     this.setModel(color);
     this.spawnHome();
     this.camPos = null;
+    this.applyQuality(this.quality);
+  }
+
+  // ---- graphics quality -------------------------------------------------------
+
+  applyQuality(name) {
+    const q = QUALITY[name] || QUALITY.auto;
+    this.quality = QUALITY[name] ? name : 'auto';
+    this.pr = this.quality === 'auto' ? 1 : q.maxPR;
+    this.prCeiling = q.maxPR;
+    this.drsAt = performance.now();
+    this.renderer.setPixelRatio(this.pr);
+    this.resize();
+    if (!this.env) return;
+    const sun = this.env.sun;
+    sun.castShadow = q.shadow > 0;
+    if (q.shadow && sun.shadow.mapSize.x !== q.shadow) {
+      sun.shadow.mapSize.set(q.shadow, q.shadow);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    }
+    this.world.setGrassDensity(q.grass);
+  }
+
+  // Dynamic resolution: if frames run long, render fewer pixels; creep back
+  // up while there is headroom. It remembers the level that was too much so
+  // it doesn't hunt up and down.
+  adaptResolution(dt, now) {
+    if (this.quality !== 'auto' || document.hidden) return;
+    const q = QUALITY.auto;
+    this.frameAvg += (dt - this.frameAvg) * 0.05;
+    if (now - this.drsAt < 1200) return;
+    if (this.frameAvg > 1 / 50 && this.pr > q.minPR) {
+      this.prCeiling = Math.max(q.minPR, this.pr - 0.05);
+      this.pr = Math.max(q.minPR, this.pr - 0.1);
+    } else if (this.frameAvg < 1 / 58 && this.pr < Math.min(q.maxPR, this.prCeiling) && now - this.drsAt > 6000) {
+      this.pr = Math.min(q.maxPR, this.prCeiling, this.pr + 0.05);
+    } else return;
+    this.drsAt = now;
+    this.renderer.setPixelRatio(this.pr);
+    this.resize();
   }
 
   disposeWorld() {
@@ -96,6 +157,10 @@ export class Game {
   placeAt(p, yaw) {
     this.car.place(p.x, p.z, yaw);
     this.camPos = null;
+    // a teleport isn't "closing in" or "riding away": restart the guidance
+    const r = this.race;
+    if (r) { r.prevDNext = null; r.closing = 0; r.wrongWay = 0; r.offRoute = 0; r.wrongRouteOn = false; }
+    this.navAgainst = 0;
   }
 
   setModel(color) {
@@ -255,6 +320,8 @@ export class Game {
     this.checkWater(dt);
     this.checkSpots();
     this.updateNav(now);
+    this.updateGuidance(dt);
+    this.adaptResolution(dt, now);
 
     const surface = this.car.surface === KIND_DIRT ? 'dirt road' : this.car.surface === 0 ? 'off-road' : '';
     this.ui.hud({
@@ -282,36 +349,119 @@ export class Game {
     } else this.car.underwater = 0;
   }
 
+  // Four views: chase, far chase, cockpit, nose. The chase camera trails the
+  // heading with a soft lag and rolls a little with the lean; the cockpit and
+  // nose cameras ride the bike's own frame (roll softened), so nothing on the
+  // bike can clip through the view.
   updateCamera(dt) {
-    const c = this.car, s = c.spec;
-    if (this.camYaw == null || this.camPos == null) this.camYaw = c.yaw;
-    let dy = c.yaw - this.camYaw;
-    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    this.camYaw += dy * (1 - Math.exp(-dt * 3.2));
-    const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
-    const bodyPos = new THREE.Vector3(c.pos.x, c.bodyY, c.pos.z);
-    let want, look;
-    if (this.camMode === 2) {
-      const head = new THREE.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw));
-      want = bodyPos.clone().addScaledVector(head, 0.2).add(new THREE.Vector3(0, 1.2, 0));
-      look = want.clone().addScaledVector(head, 20).add(new THREE.Vector3(0, -1.0, 0));
-      this.camPos = want.clone();
-    } else {
-      const far = this.camMode === 1 ? 1.8 : 1;
-      want = bodyPos.clone().addScaledVector(fwd, -s.camDist * far).add(new THREE.Vector3(0, s.camHeight * far, 0));
-      look = bodyPos.clone().addScaledVector(fwd, 6).add(new THREE.Vector3(0, 0.9, 0));
-      if (!this.camPos) this.camPos = want.clone();
-      this.camPos.x = want.x;
-      this.camPos.z = want.z;
-      this.camPos.y += (want.y - this.camPos.y) * (1 - Math.exp(-dt * 8));
-      const g = this.world.heightAt(this.camPos.x, this.camPos.z) + 0.6;
-      if (this.camPos.y < g) this.camPos.y = g;
+    const c = this.car, s = c.spec, m = this.model;
+    const mode = this.camMode;
+    const view = mode === 2 ? 'cockpit' : mode === 3 ? 'nose' : 'chase';
+    if (this.view !== view) { setBikeView(m, view); this.view = view; this.camPos = null; }
+    const k = (rate) => 1 - Math.exp(-dt * rate);
+    const speed = Math.abs(c.forwardSpeed);
+
+    if (view !== 'chase') {
+      // eye in the upright bike frame, plus part of the lean
+      ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45);
+      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE).applyQuaternion(ROLL_Z).applyQuaternion(m.quaternion).add(m.position);
+      this.camera.position.copy(eye);
+      _q.copy(m.quaternion).multiply(ROLL_Z).multiply(FLIP_Y).multiply(TILT);
+      if (!this.camPos) { this.camQuat.copy(_q); this.camPos = eye.clone(); }
+      this.camQuat.slerp(_q, k(22));
+      this.camera.quaternion.copy(this.camQuat);
+      const fov = (view === 'cockpit' ? 72 : 76) + Math.min(14, speed * 0.25);
+      this.camera.fov += (fov - this.camera.fov) * k(3);
+      this.camera.updateProjectionMatrix();
+      return;
     }
+
+    // chase: heading lags a little; while sliding, favour the direction of travel
+    let target = c.renderYaw;
+    if (c.speed > 6 && c.forwardSpeed > 0) {
+      const travel = Math.atan2(c.vel.x, c.vel.z);
+      let d = travel - target; d = Math.atan2(Math.sin(d), Math.cos(d));
+      target += d * 0.5;
+    }
+    if (this.camYaw == null || this.camPos == null) this.camYaw = target;
+    let dy = target - this.camYaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    this.camYaw += dy * k(4);
+    const far = mode === 1 ? 1.75 : 1;
+    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
+    const bx = c.renderPos.x, by = c.bodyY, bz = c.renderPos.z;
+    const wantY = by + s.camHeight * far;
+    if (!this.camPos) this.camPos = new THREE.Vector3(bx - fx * s.camDist * far, wantY, bz - fz * s.camDist * far);
+    this.camPos.x = bx - fx * s.camDist * far;
+    this.camPos.z = bz - fz * s.camDist * far;
+    this.camPos.y += (wantY - this.camPos.y) * k(7);
+    const ground = this.world.heightAt(this.camPos.x, this.camPos.z) + 0.55;
+    if (this.camPos.y < ground) this.camPos.y += (ground - this.camPos.y) * k(25);
     this.camera.position.copy(this.camPos);
-    this.camera.lookAt(look);
-    const targetFov = 68 + Math.min(16, Math.abs(c.forwardSpeed) * 0.3);
-    this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-dt * 3));
+    this.camera.lookAt(bx + fx * 7, by + 0.95, bz + fz * 7);
+    this.camRoll += (c.lean * 0.3 - this.camRoll) * k(5);
+    this.camera.rotateZ(this.camRoll);
+    const fov = 68 + Math.min(16, speed * 0.3);
+    this.camera.fov += (fov - this.camera.fov) * k(3);
     this.camera.updateProjectionMatrix();
+  }
+
+  // ---- race / GPS guidance -------------------------------------------------------
+
+  // WRONG WAY: riding backwards along the race route.
+  // WRONG ROUTE: off the route and not closing in on the next checkpoint.
+  // Shortcut note: off the route but closing in (allowed!).
+  // TURN AROUND: free roam with a GPS route, heading away along it.
+  updateGuidance(dt) {
+    const c = this.car, sp = c.speed;
+    const vx = sp > 0.1 ? c.vel.x / sp : 0, vz = sp > 0.1 ? c.vel.z / sp : 0;
+    const r = this.race;
+    let state = null, aim = null, label = '';
+    if (r && r.participant && r.phase === 'running' && !r.finished) {
+      const route = r.spot.route;
+      const q = route.nearestS(c.pos.x, c.pos.z, r.progressS, 320);
+      if (q.d < 55) r.progressS = q.s;
+      r.offset = q.d;
+      const against = q.d < 30 && sp > 4 && vx * q.tx + vz * q.tz < -0.35;
+      r.wrongWay = against ? r.wrongWay + dt : Math.max(0, r.wrongWay - dt * 2.5);
+      const cps = r.spot.checkpoints;
+      const tgt = r.next < cps.length ? route.at(cps[r.next]) : route.at(route.length - 1);
+      const dNext = Math.hypot(tgt.x - c.pos.x, tgt.z - c.pos.z);
+      if (r.prevDNext != null && dt > 0) r.closing += ((r.prevDNext - dNext) / dt - r.closing) * (1 - Math.exp(-dt * 2));
+      r.prevDNext = dNext;
+      const away = q.d > 45 && sp > 3 && r.closing < 2;
+      r.offRoute = away ? r.offRoute + dt : Math.max(0, r.offRoute - dt * 2.5);
+      // latch WRONG ROUTE on, and only clear it once clearly back on track
+      if (r.offRoute > 1.4) r.wrongRouteOn = true;
+      else if (r.offRoute < 0.4 || q.d < 40) r.wrongRouteOn = false;
+      if (r.wrongWay > 0.7) { state = 'wrongway'; aim = route.at(r.progressS + 40); label = 'Turn around'; }
+      else if (r.wrongRouteOn) { state = 'wrongroute'; aim = tgt; label = r.next < cps.length ? 'Head for checkpoint ' + (r.next + 1) : 'Head for the finish'; }
+      else if (q.d > 45) {
+        aim = tgt;
+        const gate = r.next < cps.length ? 'checkpoint ' + (r.next + 1) : 'the finish';
+        if (r.closing > 2) { state = 'shortcut'; label = 'Off route, but closing in on ' + gate; }
+        else { state = 'offroute'; label = 'Head for ' + gate; }
+      }
+    } else if (!r?.participant && this.nav?.gps && sp > 4) {
+      const pts = this.nav.gps.pts;
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < Math.min(pts.length - 1, 60); i++) {
+        const d = (pts[i][0] - c.pos.x) ** 2 + (pts[i][1] - c.pos.z) ** 2;
+        if (d < bd) { bd = d; bi = i; }
+      }
+      const j = Math.min(pts.length - 1, bi + 4);
+      let tx = pts[j][0] - pts[bi][0], tz = pts[j][1] - pts[bi][1];
+      const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+      const against = Math.sqrt(bd) < 30 && vx * tx + vz * tz < -0.35;
+      this.navAgainst = against ? (this.navAgainst || 0) + dt : Math.max(0, (this.navAgainst || 0) - dt * 2.5);
+      if (this.navAgainst > 1) { state = 'turnaround'; aim = { x: pts[j][0], z: pts[j][1] }; label = 'Your route is behind you'; }
+    }
+    let rel = 0;
+    if (aim) {
+      const d = Math.atan2(aim.x - c.pos.x, aim.z - c.pos.z) - c.yaw;
+      rel = Math.atan2(Math.sin(d), Math.cos(d));
+    }
+    this.ui.guidance(state, rel, label);
   }
 
   // ---- navigation (GPS) -----------------------------------------------------
@@ -509,7 +659,7 @@ export class Game {
           return;
         }
         if (!hr) {
-          const secs = this.players.size > 1 ? LOBBY_SECONDS : SOLO_LOBBY;
+          const secs = LOBBY_SECONDS;
           this.hostRace = {
             id: Math.random().toString(36).slice(2, 8), spot: spot.id, phase: 'lobby',
             members: [from], endsAt: Date.now() + secs * 1000,
@@ -727,6 +877,7 @@ export class Game {
     this.race = {
       id: pub.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
       next: 0, startTime: 0, finished: false,
+      progressS: spot.startS, wrongWay: 0, offRoute: 0, closing: 0, prevDNext: null, offset: 0,
       standings: participants.map((id) => ({ id, cp: 0, time: null })),
     };
     this.markers?.dispose();

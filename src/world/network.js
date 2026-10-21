@@ -192,7 +192,7 @@ export class RoadNetwork {
   buildSamples() {
     this.grid = new Map();
     const put = (x, z, v) => {
-      const key = Math.floor(x / CELL) + ',' + Math.floor(z / CELL);
+      const key = cellKey(Math.floor(x / CELL), Math.floor(z / CELL));
       let a = this.grid.get(key);
       if (!a) this.grid.set(key, (a = []));
       a.push(v);
@@ -210,48 +210,63 @@ export class RoadNetwork {
     const reach = maxR + PAVED_HALF + CELL;
     const r = Math.ceil(reach / CELL);
     const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
-    let best = null;
+    const q = this.q || (this.q = { d: Infinity, e: -1, i: -1, node: -1 });
+    q.d = Infinity; q.e = -1; q.node = -1;
     for (let dz = -r; dz <= r; dz++) {
       for (let dx = -r; dx <= r; dx++) {
-        const arr = this.grid.get((cx + dx) + ',' + (cz + dz));
-        if (arr) best = this.scan(arr, x, z, best);
+        const arr = this.grid.get(cellKey(cx + dx, cz + dz));
+        if (arr) this.scanInto(arr, x, z, q);
       }
     }
-    if (!best || best.edgeDist > maxR) return null;
-    return best;
+    const best = this.resolve(q, x, z);
+    return best && best.edgeDist <= maxR ? best : null;
   }
 
-  scan(list, x, z, best) {
+  // Back-compat for callers holding their own candidate list (the worker).
+  scan(list, x, z) {
+    const q = this.q2 || (this.q2 = { d: Infinity, e: -1, i: -1, node: -1 });
+    q.d = Infinity; q.e = -1; q.node = -1;
+    this.scanInto(list, x, z, q);
+    return this.resolve(q, x, z);
+  }
+
+  // Find the closest sample (by distance to the road edge) without allocating.
+  scanInto(list, x, z, q) {
     for (let n = 0; n < list.length; n++) {
       const v = list[n];
       if (v < 0) {
         const nd = this.nodes[-v - 1];
-        const d = Math.hypot(x - nd.x, z - nd.z) - nd.disc;
-        if (!best || d < best.edgeDist) best = { edgeDist: d, y: nd.y, kind: nd.kind, x: nd.x, z: nd.z, tx: 0, tz: 1, edge: nd.edges[0], s: null, node: nd.id };
+        const d = Math.sqrt((x - nd.x) ** 2 + (z - nd.z) ** 2) - nd.disc;
+        if (d < q.d) { q.d = d; q.node = nd.id; q.e = -1; }
         continue;
       }
       const e = this.edges[(v / 65536) | 0], i = v & 65535;
       const dx = e.x[i] - x, dz = e.z[i] - z;
-      const rough = Math.sqrt(dx * dx + dz * dz) - e.half;
-      if (best && rough - STEP > best.edgeDist) continue;
-      const p = this.project(e, i, x, z);
-      if (!best || p.edgeDist < best.edgeDist) best = p;
+      const d = Math.sqrt(dx * dx + dz * dz) - e.half;
+      if (d < q.d) { q.d = d; q.e = e.id; q.i = i; q.node = -1; }
     }
-    return best;
+  }
+
+  resolve(q, x, z) {
+    if (q.node >= 0) {
+      const nd = this.nodes[q.node];
+      return { edgeDist: q.d, y: nd.y, kind: nd.kind, x: nd.x, z: nd.z, tx: 0, tz: 1, edge: nd.edges[0], s: null, node: nd.id };
+    }
+    if (q.e < 0) return null;
+    return this.project(this.edges[q.e], q.i, x, z);
   }
 
   project(e, i, x, z) {
-    let best = null;
-    for (const i0 of [i - 1, i]) {
-      if (i0 < 0 || i0 + 1 >= e.n) continue;
-      const ax = e.x[i0], az = e.z[i0], ex = e.x[i0 + 1] - ax, ez = e.z[i0 + 1] - az;
+    let d = Infinity, i0 = 0, t = 0, px = 0, pz = 0;
+    for (let k = i - 1; k <= i; k++) {
+      if (k < 0 || k + 1 >= e.n) continue;
+      const ax = e.x[k], az = e.z[k], ex = e.x[k + 1] - ax, ez = e.z[k + 1] - az;
       const l2 = ex * ex + ez * ez || 1;
-      const t = clamp(((x - ax) * ex + (z - az) * ez) / l2, 0, 1);
-      const px = ax + ex * t, pz = az + ez * t;
-      const d = Math.hypot(x - px, z - pz);
-      if (!best || d < best.d) best = { d, i0, t, px, pz };
+      const tt = clamp(((x - ax) * ex + (z - az) * ez) / l2, 0, 1);
+      const qx = ax + ex * tt, qz = az + ez * tt;
+      const dd = Math.sqrt((x - qx) ** 2 + (z - qz) ** 2);
+      if (dd < d) { d = dd; i0 = k; t = tt; px = qx; pz = qz; }
     }
-    const { d, i0, t, px, pz } = best;
     return {
       edgeDist: d - e.half,
       y: e.y[i0] + (e.y[i0 + 1] - e.y[i0]) * t,
@@ -285,7 +300,7 @@ export class RoadNetwork {
     const out = [];
     for (let cz = Math.floor(minZ / CELL); cz <= Math.floor(maxZ / CELL); cz++) {
       for (let cx = Math.floor(minX / CELL); cx <= Math.floor(maxX / CELL); cx++) {
-        const a = this.grid.get(cx + ',' + cz);
+        const a = this.grid.get(cellKey(cx, cz));
         if (a) for (const v of a) out.push(v);
       }
     }
@@ -355,6 +370,9 @@ export class RoadNetwork {
     return { pts, length: dist[target] };
   }
 }
+
+// numeric grid keys (no string building on the hot path)
+function cellKey(cx, cz) { return (cx + 32768) * 65536 + (cz + 32768); }
 
 function segmentsCross(p1, p2, p3, p4) {
   const d = (a, b, c) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);

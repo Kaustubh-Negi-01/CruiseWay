@@ -1,5 +1,6 @@
 import { Game } from './game.js';
-import { UI } from './ui.js';
+import { UI, chips } from './ui.js';
+import { QUALITY } from './game.js';
 import { Input } from './input.js';
 import { Net, normalizeCode } from './net.js';
 import { MapView } from './map.js';
@@ -167,6 +168,21 @@ function setupBigMap() {
     game.setWaypointPoint(x, z);
   };
 }
+
+// graphics quality (remembered per device)
+const qualityHints = {
+  auto: 'Adjusts resolution on the fly to keep riding smooth.',
+  high: 'Sharpest image and detailed shadows. Needs a strong GPU.',
+  medium: 'Balanced: native resolution, lighter shadows and grass.',
+  low: 'For older laptops: lower resolution, no shadows, sparse grass.',
+};
+const qualityPick = chips($('[data-opt=quality]'), Object.fromEntries(Object.entries(QUALITY).map(([k, v]) => [k, v.label])), store.get('quality', 'auto'), (q) => {
+  store.set('quality', q);
+  game.applyQuality(q);
+  $('#qualityHint').textContent = qualityHints[q];
+});
+game.quality = qualityPick.get();
+$('#qualityHint').textContent = qualityHints[qualityPick.get()];
 
 // host safety valve: call off a stuck race
 $('#endRaceBtn').onclick = () => game.endRace(true);

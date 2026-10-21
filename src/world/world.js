@@ -29,9 +29,10 @@ export class World {
     this.group = new THREE.Group();
     scene.add(this.group);
 
-    this.terrainMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.96, metalness: 0 }), { terrain: true });
-    this.roadMat = patch(new THREE.MeshStandardMaterial({ map: textures().noise, roughness: 0.8, metalness: 0 }), { road: true });
-    this.treeMat = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }));
+    // Lambert: much cheaper per pixel than PBR, and these surfaces are matte anyway
+    this.terrainMat = patch(new THREE.MeshLambertMaterial(), { terrain: true });
+    this.roadMat = patch(new THREE.MeshLambertMaterial({ map: textures().noise }), { road: true });
+    this.treeMat = patch(new THREE.MeshLambertMaterial({ vertexColors: true }));
     this.treeGeos = makeTreeGeometries();
     this.indexCache = new Map();
 
@@ -43,7 +44,10 @@ export class World {
     this.worker = new TerrainWorker();
     this.worker.onerror = (e) => console.error('terrain worker failed', e.message || e);
     this.worker.postMessage({ type: 'init', seed });
-    this.worker.onmessage = (e) => (e.data.type === 'map' ? this.onMap(e.data) : this.onChunk(e.data));
+    // finished chunks queue up and are turned into meshes one per frame, so a
+    // burst of arrivals can't stall a single frame
+    this.arrived = [];
+    this.worker.onmessage = (e) => (e.data.type === 'map' ? this.onMap(e.data) : this.arrived.push(e.data));
     this.mapCanvas = null;
     this.mapListeners = [];
     this.mapRequested = false;
@@ -53,8 +57,17 @@ export class World {
     this.beacons = makeSpotBeacons(this.spots);
     scene.add(this.beacons);
 
-    this.grass = new GrassField(scene, this.gen);
+    this.grassDensity = 0.8;
+    this.grass = new GrassField(scene, this.gen, this.grassDensity);
     this.focus = new THREE.Vector3();
+  }
+
+  setGrassDensity(d) {
+    if (d === this.grassDensity) return;
+    this.grassDensity = d;
+    this.grass.dispose();
+    this.grass = new GrassField(this.scene, this.gen, d);
+    this.grass.update(this.focus);
   }
 
   // ---- queries --------------------------------------------------------------
@@ -68,6 +81,8 @@ export class World {
 
   update(focus) {
     this.focus.copy(focus);
+    if (this.arrived.length) this.onChunk(this.arrived.shift());
+    if (this.chunks.size < 9) while (this.arrived.length) this.onChunk(this.arrived.shift()); // first load: no waiting
     const pcx = focus.x / CHUNK - 0.5, pcz = focus.z / CHUNK - 0.5;
     const cx0 = Math.floor(focus.x / CHUNK), cz0 = Math.floor(focus.z / CHUNK);
     const R = Math.ceil(VIEW);
@@ -95,7 +110,7 @@ export class World {
       this.worker.postMessage({ type: 'chunk', key, cx, cz, seg });
     }
     // the map image waits until the nearby terrain is in
-    if (!this.mapRequested && todo.length === 0 && this.pending.size === 0) {
+    if (!this.mapRequested && todo.length === 0 && this.pending.size === 0 && !this.arrived.length) {
       this.mapRequested = true;
       this.worker.postMessage({ type: 'map', size: MAP_SIZE });
     }
@@ -128,7 +143,7 @@ export class World {
     const mesh = new THREE.Mesh(g, this.terrainMat);
     mesh.receiveShadow = true;
     group.add(mesh);
-    this.addTrees(group, m.trees, m.seg >= 64);
+    this.addTrees(group, m.trees, m.seg >= 128);
     this.group.add(group);
     if (old) this.disposeChunk(old);
     this.chunks.set(m.key, { seg: m.seg, group });

@@ -34,6 +34,12 @@ export class Bike {
     this.prevY = 0;
     this.groundVy = 0;
     this.underwater = 0;     // seconds spent submerged
+    // Physics ticks at a fixed 120 Hz; what we draw is interpolated between
+    // the last two ticks so motion is smooth at any frame rate.
+    this.prevPos = new THREE.Vector3();
+    this.prevYaw = 0;
+    this.renderPos = new THREE.Vector3();
+    this.renderYaw = 0;
   }
 
   get speed() { return Math.hypot(this.vel.x, this.vel.z); }
@@ -56,35 +62,47 @@ export class Bike {
     this.onGround = true;
     this.world.normalAt(x, z, this.normal);
     this.smoothNormal.copy(this.normal);
+    this.prevPos.copy(this.pos);
+    this.renderPos.copy(this.pos);
+    this.prevYaw = this.renderYaw = yaw;
+    this.acc = 0;
   }
 
   update(dt, input) {
     this.acc += Math.min(dt, 0.1);
     while (this.acc >= FIXED) {
+      this.prevPos.copy(this.pos);
+      this.prevYaw = this.yaw;
       this.step(FIXED, input);
       this.acc -= FIXED;
     }
+    const a = this.acc / FIXED;
+    this.renderPos.lerpVectors(this.prevPos, this.pos, a);
+    let dyaw = this.yaw - this.prevYaw;
+    dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+    this.renderYaw = this.prevYaw + dyaw * a;
     this.smoothNormal.lerp(this.normal, 1 - Math.exp(-dt * 12)).normalize();
     // Suspension: a damped spring that tracks the wheels' height AND vertical
     // speed, so a steady climb settles at zero offset (no sinking into the
     // road) and only sudden changes in slope get softened.
+    const gy = this.renderPos.y;
     if (dt > 0) {
-      const vy = (this.pos.y - this.prevY) / dt;
+      const vy = (gy - this.prevY) / dt;
       this.groundVy += (vy - this.groundVy) * (1 - Math.exp(-dt * 30));
     }
-    this.prevY = this.pos.y;
+    this.prevY = gy;
     const k = 220, c = 2 * Math.sqrt(k);
-    this.bodyVy += ((this.pos.y - this.bodyY) * k + (this.groundVy - this.bodyVy) * c) * dt;
+    this.bodyVy += ((gy - this.bodyY) * k + (this.groundVy - this.bodyVy) * c) * dt;
     this.bodyY += this.bodyVy * dt;
     // never sit below the road surface, and never float far above it
-    if (this.bodyY < this.pos.y - 0.05) { this.bodyY = this.pos.y - 0.05; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
-    if (this.bodyY > this.pos.y + 0.35) this.bodyY = this.pos.y + 0.35;
+    if (this.bodyY < gy - 0.05) { this.bodyY = gy - 0.05; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
+    if (this.bodyY > gy + 0.35) this.bodyY = gy + 0.35;
 
     const vf = this.forwardSpeed;
     this.wheelSpin += (vf / 0.31) * dt;
     this.odometer += Math.abs(vf) * dt;
     // lean from the centripetal demand of the turn: tan(lean) = v * yawRate / g
-    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8), -0.85, 0.85);
+    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62);
     this.lean += (target - this.lean) * (1 - Math.exp(-dt * 5));
   }
 
@@ -181,9 +199,9 @@ export class Bike {
     }
   }
 
-  orientation(out) {
+  orientation(out, yaw = this.renderYaw) {
     const up = this.smoothNormal;
-    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    _fwd.set(Math.sin(yaw), 0, Math.cos(yaw));
     _fwd.addScaledVector(up, -_fwd.dot(up)).normalize();
     _right.crossVectors(up, _fwd);
     _m.makeBasis(_right, up, _fwd);
@@ -191,7 +209,7 @@ export class Bike {
   }
 
   applyTo(model) {
-    model.position.set(this.pos.x, this.bodyY, this.pos.z);
+    model.position.set(this.renderPos.x, this.bodyY, this.renderPos.z);
     this.orientation(model.quaternion);
     const ud = model.userData;
     ud.lean.rotation.z = this.lean;

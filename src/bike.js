@@ -210,15 +210,51 @@ export function buildBike(color = PALETTE[0]) {
   under.renderOrder = 2;
   root.add(under);
 
+  // --- cockpit (only shown in the first-person view): a dark cowl ahead of
+  // the eyes with a glowing rim and a small gauge pod
+  const exterior = [...lean.children];
+  const cockpit = new THREE.Group();
+  cockpit.visible = false;
+  const cowl = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), mats.dark);
+  cowl.scale.set(0.46, 0.08, 0.6);
+  cowl.position.set(0, 0.84, 0.55);
+  const rimCurve = new THREE.EllipseCurve(0, 0, 0.46, 0.6, Math.PI * 0.08, Math.PI * 0.92, false);
+  const rimPts = rimCurve.getPoints(40).map((p) => new THREE.Vector3(p.x, 0.845, 0.55 + p.y));
+  const rim = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts), 60, 0.006, 6, false), mats.glow);
+  const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.05, 32), mats.graphite);
+  pod.rotation.x = -1.1;
+  pod.scale.set(0.8, 0.8, 0.8);
+  pod.position.set(0, 0.885, 0.5);
+  const gauge = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.005, 6, 40, Math.PI * 1.5), mats.glow);
+  gauge.rotation.set(-1.1 + Math.PI / 2, 0, Math.PI * 0.75);
+  gauge.scale.set(0.8, 0.8, 0.8);
+  gauge.position.set(0, 0.897, 0.49);
+  const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.02, 0.5), mats.graphite);
+  frameL.position.set(-0.22, 1.14, 0.18); frameL.rotation.set(0.35, 0, 0.5);
+  const frameR = frameL.clone(); frameR.position.x = 0.22; frameR.rotation.z = -0.5;
+  cockpit.add(cowl, rim, pod, gauge, frameL, frameR);
+  lean.add(cockpit);
+
   root.traverse((o) => {
     if (!o.isMesh) return;
     const lit = !o.material.isMeshBasicMaterial;
-    o.castShadow = lit;
+    o.castShadow = lit && !cockpit.children.includes(o);
     o.receiveShadow = lit;
   });
-  root.userData = { lean, steerer, wheels: [rearWheel, frontWheel], mats };
+  root.userData = { lean, steerer, wheels: [rearWheel, frontWheel], mats, exterior, cockpit, under };
   return root;
 }
+
+// 'chase' shows the whole bike; 'cockpit' swaps in the dashboard; 'nose' hides it all.
+export function setBikeView(root, view) {
+  const ud = root.userData;
+  for (const o of ud.exterior) o.visible = view === 'chase';
+  ud.cockpit.visible = view === 'cockpit';
+  ud.under.visible = view !== 'nose';
+}
+
+// Eye position inside the canopy, in the bike's leaning frame.
+export const EYE = new THREE.Vector3(0, 1.1, 0.02);
 
 export function ghostify(root) {
   root.traverse((o) => {
