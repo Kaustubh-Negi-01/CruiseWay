@@ -52,7 +52,7 @@ input:focus { border-color: var(--accent); }
   background: linear-gradient(90deg, rgba(10,8,12,0.55), rgba(10,8,12,0.1) 70%); place-items: center start; padding-left: max(16px, 6vw); }
 .menu-card { width: min(480px, 100%); background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line);
   border-radius: 22px; padding: 28px 26px; max-height: calc(100vh - 80px); overflow: auto; }
-.logo { margin: 0; font: 900 52px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .18em; }
+.logo { margin: 0; font: 900 46px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .12em; }
 .tag { margin: 6px 0 10px; color: var(--muted); }
 .status { min-height: 1.2em; color: var(--accent); margin: 14px 0 0; font-size: 14px; }
 .status.err { color: #ff8a80; }
@@ -221,3 +221,8 @@ kbd { display: inline-block; min-width: 24px; text-align: center; padding: 1px 6
 #guide.offroute { border-color: rgba(242,193,78,.5); }
 #guide.offroute b { color: #f2c14e; }
 #hud.cockpit .speedo .dial { display: none; }
+
+/* ---------- cursor + performance overlay ---------- */
+body.no-cursor, body.no-cursor * { cursor: none !important; }
+#stats { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); font: 600 12px ui-monospace, monospace;
+  background: rgba(0,0,0,0.6); color: #9ff3c6; padding: 4px 10px; border-radius: 8px; white-space: nowrap; }

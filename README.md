@@ -1,4 +1,4 @@
-# Convoy
+# CruiseWay
 
 An open-world island ride made to share with friends: golden-hour hills, a whole network of roads and dirt tracks, and race spots dotted around the map.
 
@@ -32,7 +32,23 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | C | Cycle camera |
 | M | Map |
 | Enter / Backspace | Accept / dismiss a race prompt |
+| Alt + C | Show / hide the mouse cursor (hidden while riding) |
+| F3 | Performance overlay (FPS, CPU time, draw calls, triangles) |
 | Esc | Menu |
+
+## Graphics settings
+
+Open the Esc menu to change these. They're remembered on each device.
+
+| Preset | What it does |
+| --- | --- |
+| **Auto** (default) | Runs Medium. If your machine can't hold the frame rate, it lowers resolution (down to 0.6×), then steps down to Low and then Eco. It never renders above native resolution. |
+| **Eco** | Coolest and quietest. 30 FPS, 0.7× resolution, no shadows, no anti-aliasing, short view distance, sparse grass. |
+| **Low** | 0.85× resolution, no anti-aliasing, bike shadow only, lighter terrain and grass. |
+| **Medium** | Native resolution, anti-aliasing, bike shadow only, about 1.5 km view. |
+| **High** | Up to 1.5× on HiDPI screens, tree shadows, full terrain detail, about 1.9 km view. |
+
+There's a separate frame-rate cap: 30, 60 (default) or Max. The game doesn't draw the 3D world while the full-screen map is open, and the menu backdrop runs at 30 FPS. Anti-aliasing can only change on a page reload.
 
 ## How multiplayer works
 
