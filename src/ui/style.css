@@ -284,10 +284,23 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 @media (max-width: 640px) { #nowPlaying { bottom: 110px; max-width: calc(100vw - 24px); } #npVolume { display: none; } }
 
 /* ---------- YouTube video card (must stay visible while a song plays) ---------- */
-#ytCard { position: absolute; left: 14px; bottom: 18px; width: 240px; height: 200px; border-radius: 12px; overflow: hidden;
-  background: #000; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.45); pointer-events: auto; }
+#ytCard { position: fixed; width: 240px; height: 200px; border-radius: 12px; overflow: hidden; z-index: 30;
+  background: #000; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.45); pointer-events: auto;
+  transition: opacity .35s; }
+#ytCard[data-corner="bl"] { left: 14px; bottom: 18px; }
+#ytCard[data-corner="br"] { right: 14px; bottom: 18px; }
+#ytCard[data-corner="tl"] { left: 14px; top: 14px; }
+#ytCard[data-corner="tr"] { right: 14px; top: 14px; }
+#ytCard.dragging { right: auto; bottom: auto; transition: none; opacity: .9; }
+#ytCard.dragging iframe { pointer-events: none; }
+/* while riding it fades back so it's less in the way; hovering brings it back */
+body.no-cursor #ytCard:not(:hover) { opacity: .5; }
 #ytPlayer, #ytPlayer iframe { width: 240px; height: 200px; display: block; border: 0; }
+#ytGrip { position: absolute; top: 6px; left: 6px; padding: 3px 8px; border-radius: 10px; cursor: grab; user-select: none; touch-action: none;
+  background: rgba(0,0,0,.65); color: #fff; font: 600 11px system-ui; opacity: .7; }
+#ytGrip:hover { opacity: 1; }
+.dragging #ytGrip { cursor: grabbing; }
 #ytHide { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; border: 0; cursor: pointer;
   background: rgba(0,0,0,.65); color: #fff; font-size: 12px; opacity: .7; }
 #ytHide:hover { opacity: 1; }
-body.video-on #toasts { bottom: 232px; }
+body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }

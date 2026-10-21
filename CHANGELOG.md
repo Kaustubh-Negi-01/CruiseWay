@@ -7,6 +7,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 **Radio (Q)**
 - Songs now come from YouTube: search for any song and play it, free and with no sign-in.
 - A small YouTube player sits in the bottom-left corner while a song plays. YouTube requires it to stay visible, so closing it (✕) pauses the song.
+- Drag the player by its grip to any corner; it snaps there and remembers your choice. While you ride it fades to half, and hovering brings it back.
 - Suggestion chips: Popular, Chill, Lo-Fi, Driving, Synthwave, Rock, Hip-Hop, EDM and Bollywood.
 - When a song ends, the next one in the list plays. Videos that can't be embedded are skipped.
 - Search uses public Invidious servers and fails over between them. Set `VITE_YOUTUBE_API_KEY` to use the official YouTube search instead.

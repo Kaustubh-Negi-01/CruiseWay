@@ -31,7 +31,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
   - Search any song on YouTube and play it, free and with no sign-in. Or tune in to live internet radio stations from radio-browser.info.
-  - Songs play in a small YouTube player in the bottom-left corner. YouTube's rules require the player to stay visible while it plays, so hiding it pauses the song.
+  - Songs play in a small YouTube player in the bottom-left corner. YouTube's rules require the player to stay visible while it plays, so hiding it pauses the song. Drag it by its grip to any corner; it fades while you ride.
   - Recently played, suggestion chips (Chill, Lo-Fi, Driving, Synthwave and more), and a now-playing mini player with play/pause, next and volume. When a song ends, the next result plays. Videos whose owners don't allow embedding are skipped.
   - The zen music fades out while the radio plays.
 - **Controls:** keyboard, gamepad and on-screen touch controls.

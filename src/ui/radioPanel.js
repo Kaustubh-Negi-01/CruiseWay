@@ -30,6 +30,7 @@ export class RadioPanel {
     };
     $('#ytHide').onclick = () => { this.videoHidden = true; radio.pause(); this.renderPlayer(); };
     radio.on(() => { if (radio.playing && radio.current?.kind === 'video') this.videoHidden = false; });
+    this.bindDrag();
     $('#npNext').onclick = () => radio.next();
     $('#npOpen').onclick = () => this.toggle();
     const vol = $('#npVolume');
@@ -139,6 +140,40 @@ export class RadioPanel {
     this.body.querySelectorAll('.radio-row').forEach((b) => {
       const it = this.currentLists?.[b.dataset.list]?.[Number(b.dataset.i)];
       b.classList.toggle('playing', !!cur && !!it && it.kind === cur.kind && it.id === cur.id);
+    });
+  }
+
+  // The video card can be dragged by its grip and snaps to the nearest corner
+  // (remembered on this device). The iframe swallows mouse events, so the
+  // grip is the only handle.
+  bindDrag() {
+    const card = $('#ytCard'), grip = $('#ytGrip');
+    const place = (corner) => {
+      card.dataset.corner = corner;
+      document.body.dataset.videoCorner = corner;
+    };
+    let saved = 'bl';
+    try { saved = localStorage.getItem('cruiseway:ytCorner') || 'bl'; } catch { /* storage blocked */ }
+    place(['tl', 'tr', 'bl', 'br'].includes(saved) ? saved : 'bl');
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      const r = card.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      card.classList.add('dragging');
+      const move = (ev) => { card.style.left = ev.clientX - dx + 'px'; card.style.top = ev.clientY - dy + 'px'; };
+      const up = (ev) => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        card.classList.remove('dragging');
+        card.style.left = card.style.top = '';
+        const corner = (ev.clientY < innerHeight / 2 ? 't' : 'b') + (ev.clientX < innerWidth / 2 ? 'l' : 'r');
+        place(corner);
+        try { localStorage.setItem('cruiseway:ytCorner', corner); } catch { /* storage blocked */ }
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
     });
   }
 
