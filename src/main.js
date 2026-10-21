@@ -256,6 +256,14 @@ for (const key of ['master', 'music', 'effects']) {
   el.addEventListener('input', () => saveSound({ [key]: el.value / 100 }));
 }
 
+// weather: the shared forecast, or always sunny on this device
+const weatherPref = store.get('weather') === 'clear' ? 'clear' : 'live';
+game.setClearSkies(weatherPref === 'clear');
+chips($('[data-opt=weather]'), { live: 'Live', clear: 'Always sunny' }, weatherPref, (v) => {
+  store.set('weather', v);
+  game.setClearSkies(v === 'clear');
+});
+
 chips($('[data-opt=fps]'), { 30: '30 FPS', 60: '60 FPS', 0: 'Max' }, String(fpsCap), (v) => {
   store.set('fps', v);
   game.fpsCap = Number(v);

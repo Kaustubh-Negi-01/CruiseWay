@@ -22,9 +22,9 @@ export class World {
     scene.add(this.group);
 
     // Lambert: much cheaper per pixel than PBR, and these surfaces are matte anyway
-    this.terrainMat = patch(new THREE.MeshLambertMaterial(), { terrain: true });
-    this.roadMat = patch(new THREE.MeshLambertMaterial({ map: textures().noise }), { road: true });
-    this.treeMat = patch(new THREE.MeshLambertMaterial({ vertexColors: true }));
+    this.terrainMat = patch(new THREE.MeshLambertMaterial(), { terrain: true, snow: true });
+    this.roadMat = patch(new THREE.MeshLambertMaterial({ map: textures().noise }), { road: true, snow: true });
+    this.treeMat = patch(new THREE.MeshLambertMaterial({ vertexColors: true }), { snow: true });
     this.treeGeos = makeTreeGeometries();
     this.indexCache = new Map();
 
@@ -75,7 +75,14 @@ export class World {
 
   // Haze thick enough that the edge of the loaded world melts away.
   setFog() {
-    ATMOS.uFogDensity.value = 1.65 / (this.view * CHUNK);
+    this.fogBase = 1.65 / (this.view * CHUNK);
+    ATMOS.uFogDensity.value = Math.max(this.fogBase, this.weatherFog || 0);
+  }
+
+  // Weather haze (foggy, rain, snow) on top of the distance haze.
+  setWeatherFog(density) {
+    this.weatherFog = density;
+    ATMOS.uFogDensity.value = Math.max(this.fogBase, density);
   }
 
   segFor(d) {

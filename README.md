@@ -8,7 +8,22 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 
 ## Features
 
-- **An island to explore.** About 8×8 km, with a coastline and the sea all round, and lakes in some valleys. Rolling hills, pine forests, lone trees and knee-high grass that sways in the wind, all under a golden-hour sky with drifting clouds and haze that glows toward the sun.
+- **An island to explore.** About 8×8 km, with a coastline and the sea all round, and lakes in some valleys. Rolling hills, pine forests, lone trees and knee-high grass that sways in the wind, under a sky with drifting clouds and haze that glows toward the sun.
+- **Day, night and weather.**
+  - The world keeps time in fixed ticks, like Minecraft: 20 ticks a second, and 24,000 ticks (20 real minutes) to a full day. You get sunrise, a bright noon, golden hour, a purple dusk, and a starry night with a moon. The bike's headlight comes on at dusk and in bad weather.
+  - Random weather that blends smoothly from one kind to the next over about a minute:
+    - **Sunny:** the classic look.
+    - **Cloudy:** a grey sky, the in-between weather before rain or snow and after it clears.
+    - **Foggy:** thick fog, about 150 m of visibility.
+    - **Rainy:** rain, grey skies, and roads that turn dark and shiny with puddles.
+    - **Snowy:** snowflakes. If it keeps snowing for a few minutes, the grass, trees and roadsides turn white.
+    - **Thunderstorm:** heavy rain, a dark sky, lightning bolts that light up the clouds, and rolling thunder that arrives after the flash.
+  - The order is realistic, not random:
+    - Rain and snow only come from a cloudy sky, and storms ease off into rain.
+    - A slowly drifting temperature decides whether clouds bring rain and storms (warm) or snow (cold). Rain never turns straight into snow or back: at least two dry spells come in between.
+    - Fog is most likely at dawn and at night.
+  - Everyone in a world shares the same clock and weather. The time and weather show under the minimap.
+  - Wet roads and snow cost a little grip.
 - **A road network.** Paved roads meet at junctions, with dashed centre lines on straights and double lines through bends. Dirt roads and dead-end trails lead into the hills, and everywhere in between is open ground you can ride across.
 - **Same world for everyone.** The world seed decides everything (terrain, roads, trees and race spots), so every player builds the identical island on their own device. Terrain builds in a background worker with distance-based detail, so you can see about 2 km without stutter.
 - **The ride: an enclosed streamliner superbike.** Fat tyres, glowing hubless rims, and light strips in your colour. It leans into corners, and its suspension follows the ground smoothly. Grip differs on tarmac, dirt and grass. Tree trunks are solid. Ride into the sea and you're put back on the road.
@@ -27,7 +42,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Results at the end, and the session leaderboard counts wins.
 - **Sound:**
   - Riding uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
-  - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; a calm generative zen soundtrack.
+  - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; rain, storm wind and thunder; a calm generative zen soundtrack.
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
   - Search any song on YouTube and play it, free and with no sign-in. Or tune in to live internet radio stations from radio-browser.info.
@@ -61,6 +76,8 @@ Open the Esc menu to change these. They're remembered on each device.
 | **Low** | 0.85× resolution, no anti-aliasing, bike shadow only, lighter terrain and grass. |
 | **Medium** | Native resolution, anti-aliasing, bike shadow only, about 1.5 km view. |
 | **High** | Up to 1.5× on HiDPI screens, tree shadows, full terrain detail, about 1.9 km view. |
+
+Rain and snow use fewer drops on lighter presets. They're drawn on the GPU in one draw call each, so weather costs almost nothing on the CPU. The **Weather** setting can be **Live** (the shared forecast) or **Always sunny**, which applies to your screen only.
 
 There's a separate frame-rate cap: 30, 60 (default) or Max. The game doesn't draw the 3D world while the full-screen map is open, and the menu backdrop runs at 30 FPS. Anti-aliasing can only change on a page reload.
 
@@ -134,6 +151,7 @@ src/
   audio/
     sound.js               sound engine: riding sounds, impacts, race chimes, settings
     music.js               generative zen soundtrack
+    weather.js             rain, wind and thunder sounds
 
   ui/
     hud.js                 HUD, prompts, results, performance overlay
@@ -142,6 +160,8 @@ src/
     style.css              all styling
 
   world/
+    climate/
+      climate.js           world clock (20 ticks/s), weather forecast, snow + wet build-up
     generation/            pure maths, shared with the background worker
       noise.js             seeded random + noise
       terrainGen.js        island height, terrain chunks, trees, map image
@@ -152,7 +172,8 @@ src/
       world.js             chunk streaming, roads, trees, water, beacons
       materials.js         shaders: ground, roads, grass, haze
       grass.js             grass around the rider
-      sky.js               sky, sun, clouds, reflections
+      sky.js               sun, moon, stars, clouds and light through the day
+      weather.js           rain, snow and lightning effects
 ```
 
 Where to look:

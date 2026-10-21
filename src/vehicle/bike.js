@@ -24,6 +24,18 @@ const BODY = { '#38e8ff': '#e2541f', '#ff4fd8': '#2b2f45', '#ffb627': '#1f6f8b',
 let ENV = null;
 export function setBikeEnvironment(envMap) { ENV = envMap; }
 
+// Reflections dim at night and under cloud (the reflection map is a daytime sky).
+export function setEnvLevel(root, level) {
+  const mats = root?.userData.mats;
+  if (!mats) return;
+  for (const k in mats) {
+    const m = mats[k];
+    if (!m.envMap) continue;
+    m.userData.env0 ??= m.envMapIntensity;
+    m.envMapIntensity = m.userData.env0 * level;
+  }
+}
+
 // rider's eye for the cockpit camera, in the bike's frame
 export const EYE = new THREE.Vector3(0, 1.52, -0.3);
 

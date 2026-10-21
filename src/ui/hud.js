@@ -224,6 +224,14 @@ export class UI {
     }
   }
 
+  // Time of day and weather, under the minimap.
+  sky(time, weather, night) {
+    setText('#skyTime', time);
+    setText('#skyWeather', weather);
+    const el = document.getElementById('skyInfo');
+    if (el && el.classList.contains('night') !== night) el.classList.toggle('night', night);
+  }
+
   toggleStats() {
     this.statsOn = !this.statsOn;
     $('#stats').classList.toggle('hidden', !this.statsOn);

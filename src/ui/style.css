@@ -315,3 +315,10 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 #wheelie.up span { color: #ffb36b; }
 #wheelie.rest .wl-bar i, #wheelie.charging .wl-bar i { background: rgba(255,255,255,.45); }
 #wheelie.slow { opacity: .55; }
+
+/* ---------- time of day + weather (under the minimap) ---------- */
+#skyInfo { position: absolute; top: 222px; right: 14px; width: 200px; display: flex; justify-content: center; align-items: baseline; gap: 10px;
+  font-size: 12px; color: rgba(255,255,255,.85); text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; }
+#skyInfo b { font: 700 14px ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+#skyInfo.night b { color: #9fb4ff; }
+@media (max-width: 760px) { #skyInfo { top: 150px; width: 130px; } }
