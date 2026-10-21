@@ -14,6 +14,15 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const GEARS = [0, 500, 335, 255, 200, 162, 136];
 const IDLE = 1100, UPSHIFT = 6600, DOWNSHIFT = 2700;
 
+// Recorded engine: two clips (public/audio), one for tarmac and one for
+// grass/dirt. From each we cut a low-rev and a high-rev loop (seconds into
+// the clip) and the engine revs they roughly correspond to. Tune by ear.
+const SAMPLES = {
+  road: { file: 'engine-road.mp3', low: [4.0, 6.0], high: [9.6, 11.4] },
+  off:  { file: 'engine-offroad.mp3', low: [4.0, 6.0], high: [9.6, 11.4] },
+};
+const LOW_RPM = 3000, HIGH_RPM = 6500;
+
 export const DEFAULT_SOUND = { master: 0.8, effects: 0.8, music: 0.45, effectsOn: true, musicOn: true };
 
 export class SoundManager {
@@ -44,11 +53,53 @@ export class SoundManager {
     this.white = noiseBuffer(ctx, 'white');
     this.brown = noiseBuffer(ctx, 'brown');
     this.music = new ZenMusic(ctx, this.musicBus);
+    this.loadSamples();
     this.apply();
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
       if (document.hidden) this.ctx.suspend(); else this.ctx.resume();
     });
+  }
+
+  async loadSamples() {
+    const ctx = this.ctx, base = import.meta.env.BASE_URL || '/';
+    try {
+      const decoded = await Promise.all(Object.values(SAMPLES).map(async (c) =>
+        ctx.decodeAudioData(await (await fetch(base + 'audio/' + c.file)).arrayBuffer())));
+      const keys = Object.keys(SAMPLES);
+      this.samples = {};
+      keys.forEach((k, i) => {
+        this.samples[k] = { low: makeLoop(ctx, decoded[i], ...SAMPLES[k].low), high: makeLoop(ctx, decoded[i], ...SAMPLES[k].high) };
+      });
+      if (this.riding) this.startSampleEngine();
+    } catch (e) {
+      console.warn('engine samples unavailable, using the synthesised engine', e);
+    }
+  }
+
+  // Four looping voices (road low/high, off-road low/high) whose speed tracks
+  // the revs; we crossfade low<->high by rpm and road<->off-road by surface.
+  startSampleEngine() {
+    if (!this.samples || this.layers.sampleBus) return;
+    const ctx = this.ctx, L = this.layers;
+    L.sampleGain = gain(ctx, 0, this.fx);
+    L.sampleFilter = filter(ctx, 'lowpass', 6000, 0.7, L.sampleGain);
+    L.sampleBus = L.sampleFilter;
+    L.voices = {};
+    for (const surface of ['road', 'off']) {
+      for (const band of ['low', 'high']) {
+        const g = gain(ctx, 0, L.sampleBus);
+        const src = ctx.createBufferSource();
+        src.buffer = this.samples[surface][band];
+        src.loop = true;
+        src.connect(g);
+        src.start(ctx.currentTime, Math.random() * src.buffer.duration);
+        L.voices[surface + band] = { src, g };
+      }
+    }
+    // the recordings carry the engine now: silence the synthesised voice
+    L.engGain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
+    this.surfaceMix = 1;
   }
 
   set(changes) {
@@ -100,6 +151,7 @@ export class SoundManager {
     this.liftAt = -9;
     this.nextPop = 0;
     this.lastT = ctx.currentTime;
+    if (this.samples) this.startSampleEngine();
 
     // tyre roar on tarmac: band-passed noise, brighter with speed
     L.roadGain = gain(ctx, 0, this.fx);
@@ -130,7 +182,7 @@ export class SoundManager {
     if (!this.riding) return;
     this.riding = false;
     const t = this.ctx.currentTime;
-    for (const k of ['engGain', 'roadGain', 'crunchGain', 'windGain', 'skidGain']) this.layers[k].gain.setTargetAtTime(0, t, 0.1);
+    for (const k of ['engGain', 'sampleGain', 'roadGain', 'crunchGain', 'windGain', 'skidGain']) this.layers[k]?.gain.setTargetAtTime(0, t, 0.1);
   }
 
   // b: { speed (m/s), throttle 0-1, braking 0-1, slip (m/s), surface 0/1/2, onGround, lean (rad) }
@@ -197,7 +249,8 @@ export class SoundManager {
     L.exFilter.frequency.setTargetAtTime(fire * 3.2, t, T);
     const r = clamp01((this.rpm - IDLE) / 6000);
     L.engFilter.frequency.setTargetAtTime(260 + r * 900 + throttle * 1100, t, T);
-    L.engGain.gain.setTargetAtTime(0.06 + throttle * 0.08 + r * 0.03, t, T);
+    if (!L.voices) L.engGain.gain.setTargetAtTime(0.06 + throttle * 0.08 + r * 0.03, t, T);
+    else this.sampleEngine(b, throttle, t, dt);
     L.subGain.gain.setTargetAtTime(0.22 + throttle * 0.15, t, T);
     L.exGain.gain.setTargetAtTime(0.25 + throttle * 0.55, t, T);
 
@@ -208,6 +261,32 @@ export class SoundManager {
       this.nextPop = t + 0.09 + Math.random() * 0.22;
       if (Math.random() < 0.6) this.burst(0.03 + Math.random() * 0.05, 0.06, 'lowpass', 700 + Math.random() * 600);
     }
+  }
+
+  sampleEngine(b, throttle, t, dt) {
+    const L = this.layers, T = 0.05, rpm = this.rpm;
+    // tarmac vs grass/dirt, eased so crossing the road edge isn't abrupt
+    const onRoad = b.surface === 1 ? 1 : 0;
+    this.surfaceMix += (onRoad - this.surfaceMix) * (1 - Math.exp(-dt * 3));
+    // low/high rev blend (equal power) and playback speed for each band
+    const x = clamp01((rpm - LOW_RPM) / (HIGH_RPM - LOW_RPM));
+    const wLow = Math.cos(x * Math.PI / 2), wHigh = Math.sin(x * Math.PI / 2);
+    const rateLow = Math.min(1.7, Math.max(0.55, rpm / LOW_RPM));
+    const rateHigh = Math.min(1.35, Math.max(0.6, rpm / HIGH_RPM));
+    const road = Math.sqrt(this.surfaceMix), off = Math.sqrt(1 - this.surfaceMix);
+    const set = (k, w, rate) => {
+      L.voices[k].g.gain.setTargetAtTime(w, t, T);
+      L.voices[k].src.playbackRate.setTargetAtTime(rate, t, T);
+    };
+    set('roadlow', wLow * road, rateLow);
+    set('roadhigh', wHigh * road, rateHigh);
+    set('offlow', wLow * off, rateLow);
+    set('offhigh', wHigh * off, rateHigh);
+    // throttle opens the sound up; off-throttle it's quieter and muffled
+    L.sampleGain.gain.setTargetAtTime(0.32 + throttle * 0.38, t, T);
+    L.sampleFilter.frequency.setTargetAtTime(900 + throttle * 6000 + clamp01(rpm / 8000) * 1500, t, T);
+    // the off-road clip has its own dirt noise: ease off the synthesised crunch
+    L.crunchGain.gain.setTargetAtTime(L.crunchGain.gain.value * this.surfaceMix, t, T);
   }
 
   // ---- one-shot effects ------------------------------------------------------------
@@ -309,6 +388,23 @@ function softClip(k) {
   const n = 1024, c = new Float32Array(n);
   for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); }
   return c;
+}
+
+// Cut [a, b] seconds out of a clip as a seamless loop: the last 0.25 s is
+// blended into the first 0.25 s so the seam can't be heard.
+function makeLoop(ctx, buf, a, b) {
+  const sr = buf.sampleRate, fade = Math.floor(sr * 0.25);
+  const start = Math.floor(a * sr), len = Math.floor((b - a) * sr);
+  const out = ctx.createBuffer(buf.numberOfChannels, len, sr);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    for (let i = 0; i < len; i++) dst[i] = src[start + i] || 0;
+    for (let i = 0; i < fade; i++) {
+      const w = i / fade; // equal-power crossfade of the tail into the head
+      dst[i] = dst[i] * Math.sin(w * Math.PI / 2) + (src[start + len + i] || 0) * Math.cos(w * Math.PI / 2);
+    }
+  }
+  return out;
 }
 
 function noiseBuffer(ctx, kind) {

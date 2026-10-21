@@ -141,3 +141,7 @@ Where to look:
 - **Buttons and menus:** `index.html` and `src/ui/`.
 
 Inspired by the calm open-road feel of games like slowroads.io. All code and art here is original.
+
+## Credits
+
+- Engine recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). Everything else, including the other sounds and the music, is generated in code.
