@@ -1,22 +1,45 @@
-// In-game radio: songs from Audius (artists upload and share their own
-// tracks; its public API allows apps to search and stream them) and live
-// internet radio stations from the community-run radio-browser.info
-// directory. Neither needs an account or API key.
+// In-game radio: any song from YouTube (played in the official YouTube
+// player, see youtube.js) and live internet radio stations from the
+// community-run radio-browser.info directory. No account needed.
 //
 // Items look like:
-//   { kind: 'track',   id, title, artist, art, duration }
+//   { kind: 'video',   id (YouTube video id), title, artist, art, duration }
 //   { kind: 'station', id, title, artist (tags/country), art, url }
 
-const APP = 'CruiseWay';
-const AUDIUS_DISCOVERY = 'https://api.audius.co';
+import { YouTubeRadio } from './youtube.js';
+
 const RADIO_HOSTS = ['https://de1.api.radio-browser.info', 'https://all.api.radio-browser.info'];
 const RECENT_KEY = 'cruiseway:radioRecent';
 const VOLUME_KEY = 'cruiseway:radioVolume';
 
-export const GENRES = ['Chill', 'Lo-Fi', 'Electronic', 'Hip-Hop/Rap', 'Rock', 'Ambient', 'House', 'Pop'];
+// Suggestion chips: each is just a search run for you.
+export const SUGGESTIONS = {
+  Popular: 'top hit songs',
+  Chill: 'chill songs playlist',
+  'Lo-Fi': 'lofi hip hop',
+  Driving: 'driving songs',
+  Synthwave: 'synthwave',
+  Rock: 'rock songs',
+  'Hip-Hop': 'hip hop songs',
+  EDM: 'edm songs',
+  Bollywood: 'bollywood songs',
+};
 
 export class Radio {
-  constructor() {
+  constructor({ videoContainer, youtubeKey = '' } = {}) {
+    // songs: the YouTube player (must stay visible while it plays)
+    this.yt = new YouTubeRadio({ container: videoContainer, width: 240, height: 200, apiKey: youtubeKey });
+    this.yt.on('ended', () => this.next());
+    this.yt.on('playing', () => { this.remember(this.current); this.emit(); });
+    this.yt.on('paused', () => this.emit());
+    this.yt.on('error', () => {
+      // usually "the owner doesn't allow embedding": skip to the next one
+      if (this.current?.kind !== 'video') return;
+      this.error = "This one can't be played here, skipping…";
+      this.emit();
+      setTimeout(() => this.next(), 1200);
+    });
+    // stations: a plain audio element
     this.audio = new Audio();
     this.audio.preload = 'none';
     this.audio.crossOrigin = null;
@@ -43,7 +66,10 @@ export class Radio {
 
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   emit() { for (const fn of this.listeners) fn(this); }
-  get playing() { return !!this.current && !this.audio.paused; }
+  get playing() {
+    if (!this.current) return false;
+    return this.current.kind === 'video' ? this.yt.playing : !this.audio.paused;
+  }
 
   setVolume(v) {
     this.volume = v;
@@ -51,7 +77,11 @@ export class Radio {
     this.applyVolume();
   }
   setMaster(v) { this.masterVolume = v; this.applyVolume(); }
-  applyVolume() { this.audio.volume = Math.max(0, Math.min(1, this.volume * this.masterVolume)); }
+  applyVolume() {
+    const v = Math.max(0, Math.min(1, this.volume * this.masterVolume));
+    this.audio.volume = v;
+    this.yt.setVolume(v * 100);
+  }
 
   // ---- playback ---------------------------------------------------------------------
 
@@ -62,10 +92,16 @@ export class Radio {
     this.error = null;
     this.emit();
     try {
-      this.audio.src = item.kind === 'track' ? await this.trackUrl(item.id) : item.url;
-      await this.audio.play();
-      this.remember(item);
-      if (item.kind === 'station') this.countStationClick(item.id);
+      if (item.kind === 'video') {
+        this.audio.pause();
+        await this.yt.play(item.id);
+      } else {
+        this.yt.pause();
+        this.audio.src = item.url;
+        await this.audio.play();
+        this.remember(item);
+        this.countStationClick(item.id);
+      }
     } catch (e) {
       if (e.name !== 'AbortError') { this.error = 'Playback failed — try another.'; this.emit(); }
     }
@@ -73,7 +109,12 @@ export class Radio {
 
   toggle() {
     if (!this.current) return;
+    if (this.current.kind === 'video') { if (this.yt.playing) this.yt.pause(); else this.yt.play(); return; }
     if (this.audio.paused) this.audio.play().catch(() => {}); else this.audio.pause();
+  }
+
+  pause() {
+    if (this.current?.kind === 'video') this.yt.pause(); else this.audio.pause();
   }
 
   next() {
@@ -83,6 +124,7 @@ export class Radio {
   }
 
   stop() {
+    this.yt.stop();
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.current = null;
@@ -90,35 +132,20 @@ export class Radio {
   }
 
   remember(item) {
+    if (!item) return;
     this.recent = [item, ...this.recent.filter((r) => !(r.kind === item.kind && r.id === item.id))].slice(0, 20);
     save(RECENT_KEY, this.recent);
   }
 
-  // ---- Audius (songs) -----------------------------------------------------------
+  // ---- YouTube (songs) ----------------------------------------------------------
 
-  async audiusHost() {
-    if (this.host) return this.host;
-    try {
-      const j = await getJSON(AUDIUS_DISCOVERY);
-      this.host = j.data?.[Math.floor(Math.random() * j.data.length)] || AUDIUS_DISCOVERY;
-    } catch { this.host = AUDIUS_DISCOVERY; }
-    return this.host;
+  async searchSongs(query) {
+    return (await this.yt.search(query, 25)).map((v) => ({
+      kind: 'video', id: v.id, title: v.title, artist: v.author, art: v.thumb, duration: v.duration,
+    }));
   }
 
-  async trackUrl(id) { return `${await this.audiusHost()}/v1/tracks/${id}/stream?app_name=${APP}`; }
-
-  async searchTracks(query) {
-    const h = await this.audiusHost();
-    const j = await getJSON(`${h}/v1/tracks/search?query=${encodeURIComponent(query)}&limit=30&app_name=${APP}`);
-    return tracks(j.data);
-  }
-
-  async trending(genre) {
-    const h = await this.audiusHost();
-    const g = genre ? `&genre=${encodeURIComponent(genre)}` : '';
-    const j = await getJSON(`${h}/v1/tracks/trending?limit=30${g}&app_name=${APP}`);
-    return tracks(j.data);
-  }
+  suggested(chip = 'Popular') { return this.searchSongs(SUGGESTIONS[chip] || SUGGESTIONS.Popular); }
 
   // ---- radio-browser (live stations) ------------------------------------------------
 
@@ -153,15 +180,6 @@ async function getJSON(url) {
   const r = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!r.ok) throw new Error(r.status + ' ' + url);
   return r.json();
-}
-
-function tracks(list = []) {
-  return list
-    .filter((t) => t.is_streamable !== false && !t.is_delete)
-    .map((t) => ({
-      kind: 'track', id: t.id, title: t.title, artist: t.user?.name || 'Unknown artist',
-      art: t.artwork?.['150x150'] || '', duration: t.duration || 0,
-    }));
 }
 
 function stations(list = []) {

@@ -1,4 +1,4 @@
-import { GENRES } from '../radio/radio.js';
+import { SUGGESTIONS } from '../radio/radio.js';
 
 // The radio panel (Q) and the mini player at the bottom of the screen.
 const $ = (s, el = document) => el.querySelector(s);
@@ -11,7 +11,7 @@ export class RadioPanel {
     this.el = $('#radio');
     this.body = $('#radioBody');
     this.source = 'songs';     // 'songs' | 'live'
-    this.genre = null;
+    this.genre = 'Popular';
     this.query = '';
     this.lists = {};           // cached result lists by key
     this.reqId = 0;
@@ -23,7 +23,13 @@ export class RadioPanel {
     this.renderGenres();
 
     // mini player
-    $('#npToggle').onclick = () => radio.toggle();
+    $('#npToggle').onclick = () => {
+      // the YouTube player has to be visible to play, so bring it back first
+      if (radio.current?.kind === 'video' && this.videoHidden) { this.videoHidden = false; this.renderPlayer(); }
+      radio.toggle();
+    };
+    $('#ytHide').onclick = () => { this.videoHidden = true; radio.pause(); this.renderPlayer(); };
+    radio.on(() => { if (radio.playing && radio.current?.kind === 'video') this.videoHidden = false; });
     $('#npNext').onclick = () => radio.next();
     $('#npOpen').onclick = () => this.toggle();
     const vol = $('#npVolume');
@@ -51,10 +57,10 @@ export class RadioPanel {
 
   setSource(src) {
     this.source = src;
-    this.genre = null;
+    this.genre = 'Popular';
     this.query = '';
     $('#radioQuery').value = '';
-    $('#radioQuery').placeholder = src === 'songs' ? 'Search songs or artists' : 'Search stations, genres, countries';
+    $('#radioQuery').placeholder = src === 'songs' ? 'Search any song on YouTube' : 'Search stations, genres, countries';
     this.el.querySelectorAll('[data-src]').forEach((b) => b.classList.toggle('on', b.dataset.src === src));
     this.renderGenres();
     this.render();
@@ -64,10 +70,10 @@ export class RadioPanel {
     const box = $('#radioGenres');
     box.classList.toggle('hidden', this.source !== 'songs');
     box.innerHTML = '';
-    for (const g of [null, ...GENRES]) {
+    for (const g of Object.keys(SUGGESTIONS)) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = g || 'Trending';
+      b.textContent = g;
       b.classList.toggle('on', g === this.genre);
       b.onclick = () => { this.genre = g; this.query = ''; $('#radioQuery').value = ''; this.renderGenres(); this.render(); };
       box.appendChild(b);
@@ -83,18 +89,18 @@ export class RadioPanel {
   async render() {
     const id = ++this.reqId;
     const r = this.radio;
-    const recent = r.recent.filter((x) => (this.source === 'songs' ? x.kind === 'track' : x.kind === 'station')).slice(0, 6);
+    const recent = r.recent.filter((x) => (this.source === 'songs' ? x.kind === 'video' : x.kind === 'station')).slice(0, 6);
     const key = this.query ? `${this.source}:q:${this.query}` : `${this.source}:s:${this.genre || ''}`;
     const title = this.query ? `Results for “${esc(this.query)}”`
-      : this.source === 'songs' ? (this.genre ? `${esc(this.genre)} right now` : 'Suggested · trending') : 'Popular stations';
+      : this.source === 'songs' ? `Suggested · ${esc(this.genre)}` : 'Popular stations';
     const head = !this.query && recent.length ? `<h3>Recently played</h3>${this.listHTML(recent, 'recent')}` : '';
     this.body.innerHTML = `${head}<h3>${title}</h3><div class="radio-status">Loading…</div>`;
     try {
       let list = this.lists[key];
       if (!list) {
         list = this.query
-          ? (this.source === 'songs' ? await r.searchTracks(this.query) : await r.searchStations(this.query))
-          : (this.source === 'songs' ? await r.trending(this.genre) : await r.topStations());
+          ? (this.source === 'songs' ? await r.searchSongs(this.query) : await r.searchStations(this.query))
+          : (this.source === 'songs' ? await r.suggested(this.genre) : await r.topStations());
         this.lists[key] = list;
       }
       if (id !== this.reqId) return;
@@ -104,7 +110,7 @@ export class RadioPanel {
     } catch {
       if (id !== this.reqId) return;
       this.currentLists = { recent, main: [] };
-      this.body.innerHTML = `${head}<h3>${title}</h3><div class="radio-status err">Couldn't reach the music service. Check your connection and try again.</div>`;
+      this.body.innerHTML = `${head}<h3>${title}</h3><div class="radio-status err">Couldn't reach the song search right now. Try again in a moment, or use Live radio.</div>`;
       this.bind();
     }
   }
@@ -139,6 +145,9 @@ export class RadioPanel {
   renderPlayer() {
     const r = this.radio, it = r.current, np = $('#nowPlaying');
     np.classList.toggle('hidden', !it);
+    const video = !!it && it.kind === 'video' && !this.videoHidden;
+    $('#ytCard').classList.toggle('hidden', !video);
+    document.body.classList.toggle('video-on', video);
     if (!it) return;
     $('#npArt').innerHTML = it.art ? `<img src="${esc(it.art)}" alt="">` : `<span class="art-fallback">${esc((it.title[0] || '♪').toUpperCase())}</span>`;
     $('#npTitle').textContent = it.title;

@@ -151,7 +151,11 @@ new MutationObserver(updateCursor).observe(document.body, { subtree: true, attri
 input.on('stats', () => ui.toggleStats());
 
 // ---------------------------------------------------------------- radio (Q)
-const radio = new Radio();
+const radio = new Radio({
+  videoContainer: $('#ytPlayer'),
+  // optional: a YouTube Data API key makes song search more reliable (set VITE_YOUTUBE_API_KEY)
+  youtubeKey: import.meta.env.VITE_YOUTUBE_API_KEY || '',
+});
 const radioPanel = new RadioPanel(radio);
 radio.setMaster(sound.settings.master);
 radio.on(() => sound.setDuck(radio.playing));
