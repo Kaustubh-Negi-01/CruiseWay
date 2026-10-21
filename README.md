@@ -30,8 +30,9 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; a calm generative zen soundtrack.
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
-  - Search and play full songs from Audius, or live internet radio stations from radio-browser.info.
-  - Recently played, trending suggestions with genre chips, and a now-playing mini player with play/pause, next and volume.
+  - Search any song on YouTube and play it, free and with no sign-in. Or tune in to live internet radio stations from radio-browser.info.
+  - Songs play in a small YouTube player in the bottom-left corner. YouTube's rules require the player to stay visible while it plays, so hiding it pauses the song.
+  - Recently played, suggestion chips (Chill, Lo-Fi, Driving, Synthwave and more), and a now-playing mini player with play/pause, next and volume. When a song ends, the next result plays. Videos whose owners don't allow embedding are skipped.
   - The zen music fades out while the radio plays.
 - **Controls:** keyboard, gamepad and on-screen touch controls.
 
@@ -88,11 +89,15 @@ To test multiplayer on one machine, open two browser windows side by side. One c
 
 The game is live at **https://cruiseway.vercel.app**, hosted on Vercel as the `cruiseway` project. It's a static site: Vercel runs `npm run build` and serves the `dist` folder. There's no game server, because multiplayer runs peer-to-peer between players' browsers.
 
-To publish a new version from a local checkout that's linked to the project:
+The Vercel project is connected to this GitHub repo. Every pull request gets its own preview deployment, and merging into `main` publishes to production automatically.
+
+To publish by hand from a local checkout that's linked to the project:
 
 ```bash
 npx vercel deploy --prod
 ```
+
+Optional: song search uses public [Invidious](https://invidious.io) servers, which can be busy or go offline. For more reliable search, create a YouTube Data API v3 key and set it as the `VITE_YOUTUBE_API_KEY` environment variable (in Vercel: Project → Settings → Environment Variables, then redeploy). Restrict the key to your site's domain, because it ends up in the page.
 
 Invite friends with a link that includes your world code: `https://cruiseway.vercel.app/?join=CODE`.
 
@@ -122,7 +127,8 @@ src/
     barriers.js            holographic race walls + keeping racers inside them
 
   radio/
-    radio.js               radio: Audius songs + live stations, player, queue, recents
+    radio.js               radio: YouTube songs + live stations, queue, recents
+    youtube.js             standalone YouTube player + search (IFrame API, Invidious)
 
   audio/
     sound.js               sound engine: riding sounds, impacts, race chimes, settings
@@ -158,5 +164,5 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 
 ## Credits
 
-- Radio: songs are streamed from [Audius](https://audius.co), where artists upload and share their own music, through its public API. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). Nothing is bundled with the game.
+- Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search goes through public [Invidious](https://invidious.io) servers, or the YouTube Data API if a key is set. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
 - Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.
