@@ -182,10 +182,19 @@ export class SoundManager {
     const shifting = t < this.shiftUntil;
     const throttle = shifting ? 0 : b.throttle;
     if (!shifting) {
-      if (this.gear < G.length - 1 && sp * G[this.gear] > E.up && b.throttle > 0.1) { this.gear++; this.shiftUntil = t + (this.vehicle === 'car' ? 0.12 : 0.16); }
-      else if (this.gear > 1 && sp * G[this.gear] < E.down) this.gear--;
+      if (this.gear < G.length - 1 && sp * G[this.gear] > E.up && b.throttle > 0.1) {
+        const at = sp * G[this.gear];       // revs at the shift point
+        this.gear++;
+        this.shiftUntil = t + (this.vehicle === 'car' ? 0.12 : 0.09);
+        this.shiftFx(true, at, b.throttle);
+      } else if (this.gear > 1 && sp * G[this.gear] < E.down) {
+        this.gear--;
+        this.blipUntil = t + 0.16;          // rev-matching blip on the way down
+        this.shiftFx(false, sp * G[this.gear], b.throttle);
+      }
     }
     let target = Math.max(E.idle, sp * G[this.gear]);
+    if (t < (this.blipUntil || 0)) target += this.vehicle === 'car' ? 1100 : 800;
     if (sp < 4) target = Math.max(target, E.idle + throttle * 1800);
     if (!b.onGround) target += throttle * 900;
     this.rpm += (Math.min(E.max, target) - this.rpm) * (1 - Math.exp(-dt * (shifting ? 18 : 9)));
@@ -214,8 +223,58 @@ export class SoundManager {
       this.setVoice(set + 'low', wLow * s, rateLow, t, T);
       this.setVoice(set + 'high', wHigh * s, rateHigh, t, T);
     }
-    // a little quieter when coasting than under throttle
-    this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+    // a little quieter when coasting than under throttle; on an upshift the
+    // ignition cut makes the engine drop out for a moment
+    if (shifting) this.rideGain.gain.setTargetAtTime(0.2, t, 0.012);
+    else this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+  }
+
+  // A gear change you can hear: the gearbox clunks, and when you shift high
+  // in the revs (or blip down off the throttle) the exhaust pops and crackles
+  // as fuel is cut. Full-bodied on the car, quicker and lighter on the bike.
+  shiftFx(up, rpm, throttle) {
+    const ctx = this.ctx, t = ctx.currentTime, car = this.vehicle === 'car';
+    const k = car ? 1 : 0.55;
+    // clunk: a short low knock that falls in pitch...
+    const g = gain(ctx, 0, this.fx);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.34 * k, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    const o = osc(ctx, 'sine', up ? 105 : 85, g);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
+    o.stop(t + 0.15);
+    // ...with the metallic tick of the selector
+    this.burst(0.11 * k, 0.03, 'bandpass', 3400, 1.4);
+    // pops: up near the top of the revs under throttle, or down off throttle
+    const hot = up
+      ? clamp01((rpm - 4300) / 2300) * (throttle > 0.5 ? 1 : 0.35)
+      : clamp01((rpm - 2800) / 3000) * (throttle < 0.2 ? 0.8 : 0.25);
+    const pops = Math.round(hot * (car ? 3 : 2) * (0.6 + Math.random() * 0.7));
+    let at = t + 0.025;
+    for (let i = 0; i < pops; i++) {
+      this.pop(at, (0.22 + Math.random() * 0.18) * k * (0.6 + hot * 0.4));
+      at += 0.04 + Math.random() * 0.08;
+    }
+  }
+
+  // One exhaust pop: a sharp burst of mid noise over a short low thud.
+  pop(at, level) {
+    const ctx = this.ctx;
+    const g = gain(ctx, 0, this.fx);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(level, at + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.05 + Math.random() * 0.05);
+    const f = filter(ctx, 'bandpass', 450 + Math.random() * 950, 1.1, g);
+    const n = ctx.createBufferSource();
+    n.buffer = this.white;
+    n.connect(f);
+    n.start(at, Math.random() * 2, 0.12);
+    const body = gain(ctx, 0, this.fx);
+    body.gain.setValueAtTime(0.0001, at);
+    body.gain.exponentialRampToValueAtTime(level * 0.7, at + 0.004);
+    body.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
+    const o = osc(ctx, 'sine', 65 + Math.random() * 35, body, at);
+    o.stop(at + 0.11);
   }
 
   setVoice(k, w, rate, t, T) {
