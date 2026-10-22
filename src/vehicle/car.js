@@ -49,8 +49,8 @@ function loft(stations, segs = 28, roundness = 3.2) {
       idx.push(a, c, b, b, c, d);
     }
   }
-  // end caps
-  for (const [i, flip] of [[0, true], [n - 1, false]]) {
+  // end caps, facing outward (front cap +z, rear cap -z)
+  for (const [i, flip] of [[0, false], [n - 1, true]]) {
     const [z, , y0, y1] = stations[i];
     const centre = pos.length / 3;
     pos.push(0, (y0 + y1) / 2, z);
@@ -63,7 +63,6 @@ function loft(stations, segs = 28, roundness = 3.2) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  // stations run front to back, so flip faces to point outward
   return g;
 }
 
@@ -262,7 +261,14 @@ export function buildCar(color = '#38e8ff', number = '07') {
   wing.rotation.x = -0.12;
   lean.add(wing);
   lean.add(box(1.94, 0.015, 0.03, mats.accent, 0, 1.43, -1.84));
-  for (let i = -2; i <= 2; i++) lean.add(box(0.02, 0.18, 0.36, mats.carbon, i * 0.22, 0.2, -2.22));
+  // diffuser: an angled carbon panel under the tail, rising toward the back,
+  // with short fins fixed to its underside (kept inside the body and clear of the road)
+  const diffuser = new THREE.Group();
+  diffuser.position.set(0, 0.27, -2.06);
+  diffuser.rotation.x = 0.35;
+  diffuser.add(box(1.1, 0.02, 0.48, mats.carbon, 0, 0, 0));
+  for (let i = -2; i <= 2; i++) diffuser.add(box(0.015, 0.08, 0.44, mats.carbon, i * 0.22, -0.045, 0));
+  lean.add(diffuser);
   lean.add(box(1.0, 0.03, 0.03, mats.tail, 0, 0.6, -2.33));
   // engine cover fin down the spine
   const fin = box(0.02, 0.24, 1.3, mats.body, 0, 0.92, -1.1);
