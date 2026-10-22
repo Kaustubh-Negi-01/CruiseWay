@@ -46,7 +46,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Results at the end, and the session leaderboard counts wins.
 - **Sound:**
   - The bike uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
-  - The hypercar uses a real Porsche flat-six recorded on board. Idle, cruise and full-throttle loops follow its revs through a seven-speed gearbox.
+  - The hypercar uses its own recording, played as overlapping slices so it never audibly loops. Its pitch follows the revs through a seven-speed gearbox.
   - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; rain, storm wind and thunder; a calm generative zen soundtrack.
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
@@ -202,5 +202,4 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 ## Credits
 
 - Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search goes through public [Invidious](https://invidious.io) servers, or the YouTube Data API if a key is set. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
-- Riding sound: the two recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`) and an ElevenLabs-generated off-road clip (`engine-offroad.mp3`). The other effects and the music are generated in code.
-- Car sound: `public/audio/engine-car.wav` is cut and resampled from ["2006 Porsche Cayman S engine sound"](https://commons.wikimedia.org/wiki/File:2006_Porsche_Cayman_S_engine_sound.wav) by [John64](https://commons.wikimedia.org/wiki/User:John64), licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). This edited file is shared under the same license.
+- Riding sound: the three recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`), an ElevenLabs-generated off-road clip (`engine-offroad.mp3`), and an ElevenLabs-generated car clip for the hypercar (`engine-car.mp3`). The other effects and the music are generated in code.

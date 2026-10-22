@@ -8,8 +8,8 @@ import { WeatherSound } from './weather.js';
 //           └─ music bus ─── zen soundtrack
 //
 // Riding sound is only real recordings in public/audio. The bike uses two:
-// one for tarmac, one for grass and dirt. The hypercar uses a Porsche flat-six
-// recorded on board (engine-car.wav, CC BY-SA 3.0, see the README credits).
+// one for tarmac, one for grass and dirt. The hypercar uses the project
+// owner's own engine clip (engine-car.mp3).
 // Short loops are cut from each (idle, low revs, high revs) and blended by
 // engine revs through a simulated gearbox, and for the bike by surface.
 
@@ -27,12 +27,15 @@ const ENGINES = {
 const SAMPLES = {
   road: { file: 'engine-road.mp3',    idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
   off:  { file: 'engine-offroad.mp3', idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
-  // idle, 8 s of steady cruise, and a 3.9 s full-throttle pull, cut from the
-  // Porsche recording. Played as overlapping random slices (grains) rather
-  // than loops, so nothing audibly repeats. The pull's revs rise from about
-  // 92 to 174 Hz firing pitch; each slice is pitch-corrected to hold steady.
-  car:  { file: 'engine-car.wav', idle: [0.0, 0.85], low: [0.85, 8.85], high: [8.85, 12.75], gain: 1.0,
-          grains: true, pitch: { high: [92, 174] } },
+  // Your car clip (20 s): played as overlapping random slices (grains) of
+  // its under-load stretches rather than loops, so nothing audibly repeats.
+  // Each region is [from s, to s, engine note at start Hz, at end Hz]; every
+  // slice is pitch-corrected to the band's reference note, so the game's
+  // revs alone set the pitch.
+  car:  { file: 'engine-car.mp3', grains: true, gain: 1.0,
+          idle: { ref: 56, regions: [[13.2, 14.8, 66, 47]] },
+          low:  { ref: 85, regions: [[0.7, 1.6, 77, 84], [3.25, 5.1, 82, 88], [7.0, 8.6, 79, 89], [9.25, 10.6, 84, 87]] },
+          high: { ref: 85, regions: [[0.7, 1.6, 77, 84], [3.25, 5.1, 82, 88], [7.0, 8.6, 79, 89], [9.25, 10.6, 84, 87]] } },
 };
 const BANDS = ['idle', 'low', 'high'];
 
@@ -86,7 +89,7 @@ export class SoundManager {
         this.samples[k] = {};
         for (const band of BANDS) {
           this.samples[k][band] = SAMPLES[k].grains
-            ? { buffer: decoded[i], region: SAMPLES[k][band], pitch: SAMPLES[k].pitch?.[band] }
+            ? { buffer: decoded[i], ...SAMPLES[k][band] }
             : makeLoop(ctx, decoded[i], ...SAMPLES[k][band]);
         }
       });
@@ -155,13 +158,12 @@ export class SoundManager {
     if (!this.samples || this.voices) return;
     const ctx = this.ctx;
     this.rideGain = gain(ctx, 0, this.fx);
-    this.exhaust = makeExhaust(ctx, this.rideGain);
     this.voices = {};
     for (const surface of Object.keys(SAMPLES)) {
       for (const band of BANDS) {
         if (SAMPLES[surface].grains) {
           const s = this.samples[surface][band];
-          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.region, s.pitch, this.exhaust.input);
+          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.regions, s.ref, this.rideGain);
           continue;
         }
         const g = gain(ctx, 0, this.rideGain);
@@ -225,7 +227,7 @@ export class SoundManager {
     const rateHigh = Math.min(E.rateHigh[1], Math.max(E.rateHigh[0], rpm / E.high));
 
     // bike: your road clip on tarmac, your off-road clip on grass and dirt.
-    // car: the Porsche recording everywhere.
+    // car: your car clip everywhere.
     const onRoad = b.surface === 1 ? 1 : 0;
     this.surfaceMix += (onRoad - this.surfaceMix) * (1 - Math.exp(-dt * 3));
     const car = this.vehicle === 'car';
@@ -233,7 +235,17 @@ export class SoundManager {
       ? [['road', 0], ['off', 0], ['car', SAMPLES.car.gain]]
       : [['road', Math.sqrt(this.surfaceMix)], ['off', Math.sqrt(1 - this.surfaceMix)], ['car', 0]];
     for (const [set, s] of mixes) {
-      this.setVoice(set + 'idle', wIdle * s, car ? 0.9 + throttle * 0.15 : 1, t, T);
+      if (set === 'car') {
+        // the clip's engine note sits near 85 Hz under load, about 3,400 rpm
+        // here: play its slices at the note the revs ask for
+        const load = Math.min(1.6, Math.max(0.75, rpm / 40 / 85));
+        // (the clip's idle stretch is quiet coasting: lifted to sit like the bike's idle)
+        this.setVoice('caridle', wIdle * s * 2, 0.92 + throttle * 0.15, t, T);
+        this.setVoice('carlow', Math.sqrt(1 - idle) * s, load, t, T);
+        this.setVoice('carhigh', 0, load, t, T);
+        continue;
+      }
+      this.setVoice(set + 'idle', wIdle * s, 1, t, T);
       this.setVoice(set + 'low', wLow * s, rateLow, t, T);
       this.setVoice(set + 'high', wHigh * s, rateHigh, t, T);
     }
@@ -241,34 +253,6 @@ export class SoundManager {
     // ignition cut makes the engine drop out for a moment
     if (shifting) this.rideGain.gain.setTargetAtTime(0.2, t, 0.012);
     else this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
-    if (car) this.carExhaust(t, dt, rpm, throttle, b.throttle, E);
-    this.lastThrottle = b.throttle;
-  }
-
-  // The hypercar's sport exhaust. A valve opens when you're hard on the
-  // throttle high in the revs (louder, raspier, brighter, like a valved
-  // Cayman S letting go); at low revs it stays muffled. Lifting off at high
-  // revs sets off a second or so of overrun pops and burble that fades out.
-  carExhaust(t, dt, rpm, throttle, pedal, E) {
-    const x = this.exhaust;
-    const r = clamp01((rpm - E.idle) / (E.max - E.idle));
-    const open = pedal > 0.55 && rpm > 3800 ? 1 : 0;
-    this.valve = (this.valve ?? 0) + (open - (this.valve ?? 0)) * (1 - Math.exp(-dt * (open ? 6 : 3)));
-    const v = this.valve;
-    x.drive.gain.setTargetAtTime(1 + v * 1.8 + r * 0.6, t, 0.05);
-    x.tone.frequency.setTargetAtTime(1500 + v * 7000 + r * 1500, t, 0.05);
-    x.rasp.gain.setTargetAtTime(1 + v * 4.5, t, 0.08);
-    x.out.gain.setTargetAtTime((0.85 + v * 0.6) / (1 + v * 0.9 + r * 0.3), t, 0.05);
-    // overrun: off the throttle from high revs
-    if ((this.lastThrottle ?? 0) > 0.5 && pedal < 0.1 && rpm > 3500) {
-      this.crackleFrom = t;
-      this.crackleFor = 0.7 + clamp01((rpm - 3500) / 3500) * 0.9;
-    }
-    const age = t - (this.crackleFrom ?? -9);
-    if (age < (this.crackleFor ?? 0) && pedal < 0.1) {
-      const fade = 1 - age / this.crackleFor;
-      if (Math.random() < dt * (4 + 14 * fade)) this.pop(t + Math.random() * 0.03, (0.06 + Math.random() * 0.16) * fade);
-    }
   }
 
   // A gear change you can hear: the gearbox clunks, and when you shift high
@@ -414,55 +398,33 @@ function noise(ctx, buffer, to) {
   const s = ctx.createBufferSource(); s.buffer = buffer; s.loop = true; s.connect(to);
   s.start(ctx.currentTime, Math.random() * buffer.duration); return s;
 }
-// The car's exhaust chain: drive -> soft clipper (harmonics, rasp) -> low
-// shelf (boom) -> rasp peak -> tone low-pass (the "valve") -> out. Its knobs
-// are moved by SoundManager.carExhaust().
-function makeExhaust(ctx, to) {
-  const input = ctx.createGain();
-  const drive = ctx.createGain();
-  const clip = ctx.createWaveShaper();
-  const curve = new Float32Array(1024);
-  for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); }
-  clip.curve = curve;
-  clip.oversample = '2x';
-  const boom = ctx.createBiquadFilter();
-  boom.type = 'lowshelf'; boom.frequency.value = 150; boom.gain.value = 5;
-  const raspPeak = ctx.createBiquadFilter();
-  raspPeak.type = 'peaking'; raspPeak.frequency.value = 2300; raspPeak.Q.value = 0.9; raspPeak.gain.value = 1;
-  const tone = ctx.createBiquadFilter();
-  tone.type = 'lowpass'; tone.frequency.value = 1500; tone.Q.value = 0.5;
-  const out = gain(ctx, 0.85, to);
-  input.connect(drive).connect(clip).connect(boom).connect(raspPeak).connect(tone).connect(out);
-  return { input, drive, tone, rasp: raspPeak, out };
-}
-
 // An engine voice that never loops: it keeps playing short overlapping
 // slices of a recording, each from a random point in its section, with
 // equal-power crossfades. Engine sound has no melody, so the stitched result
-// sounds continuous, with no repeating pattern. If the section's pitch rises
-// (a full-throttle pull), pitch: [startHz, endHz] corrects each slice so the
-// stream holds one note and the game's revs set the pitch instead.
+// sounds continuous, with no repeating pattern. Each region carries its
+// engine note at its start and end; every slice is corrected to the voice's
+// reference note, so the stream holds one note and the game's revs set it.
 const GRAIN = 0.32, HOP = GRAIN / 2;
 const HALF_SINE = Float32Array.from({ length: 64 }, (_, i) => Math.sin((i / 63) * Math.PI));
 class GrainVoice {
-  constructor(ctx, buffer, region, pitch, out) {
+  constructor(ctx, buffer, regions, ref, out) {
     this.grains = true;
     this.ctx = ctx;
     this.buffer = buffer;
-    this.region = region;
-    this.pitch = pitch;
-    this.ref = pitch ? (pitch[0] + pitch[1]) / 2 : 1;
+    this.regions = regions;          // [[from, to, startHz, endHz], ...]
+    this.total = regions.reduce((a, r) => a + (r[1] - r[0]), 0);
+    this.ref = ref;
     this.g = gain(ctx, 0, out);
     this.rate = 1;
     this.next = 0;
     this.active = [];
   }
 
-  // the section's own pitch at offset t (linear across a rising pull)
-  correction(t) {
-    if (!this.pitch) return 1;
-    const [a, b] = this.region, f = this.pitch[0] + (this.pitch[1] - this.pitch[0]) * ((t - a) / (b - a));
-    return this.ref / f;
+  // pick a region, longer ones more often
+  pick() {
+    let x = Math.random() * this.total;
+    for (const r of this.regions) { x -= r[1] - r[0]; if (x <= 0) return r; }
+    return this.regions[this.regions.length - 1];
   }
 
   setRate(rate, t, T) {
@@ -477,10 +439,10 @@ class GrainVoice {
     if (this.next < t) this.next = t + 0.01;
     while (this.next < t + 0.3) {
       const at = this.next;
-      const [a, b] = this.region;
-      const span = GRAIN * this.rate * 1.4;                     // source time a slice may use
+      const [a, b, fa, fb] = this.pick();
+      const span = GRAIN * this.rate * 1.6;                     // source time a slice may use
       const off = a + Math.random() * Math.max(0.001, b - a - span);
-      const k = this.correction(off + span / 2);
+      const k = this.ref / (fa + (fb - fa) * ((off + span / 2 - a) / (b - a)));
       const src = ctx.createBufferSource();
       src.buffer = this.buffer;
       src.playbackRate.value = this.rate * k;
