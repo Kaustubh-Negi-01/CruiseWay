@@ -269,6 +269,15 @@ chips($('[data-opt=fps]'), { 30: '30 FPS', 60: '60 FPS', 0: 'Max' }, String(fpsC
   game.fpsCap = Number(v);
 });
 
+// Esc menu tabs (the last one opened is remembered)
+function showTab(name) {
+  for (const b of document.querySelectorAll('#pauseTabs button')) b.classList.toggle('on', b.dataset.tab === name);
+  for (const p of document.querySelectorAll('#pause .pane')) p.classList.toggle('hidden', p.dataset.pane !== name);
+  store.set('menuTab', name);
+}
+for (const b of document.querySelectorAll('#pauseTabs button')) b.onclick = () => showTab(b.dataset.tab);
+showTab(['general', 'graphics', 'audio', 'controls'].includes(store.get('menuTab')) ? store.get('menuTab') : 'general');
+
 // host safety valve: call off a stuck race
 $('#endRaceBtn').onclick = () => game.endRace(true);
 setInterval(() => {
