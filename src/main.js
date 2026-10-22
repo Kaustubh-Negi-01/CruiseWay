@@ -43,17 +43,34 @@ const sanitizeSeed = (s) => String(s || '').trim().slice(0, 32) || randomSeed();
 const previewSeed = randomSeed();
 game.preview(previewSeed);
 
-const show = (pane) => {
-  for (const id of ['home', 'create', 'join']) $('#' + id).classList.toggle('hidden', id !== pane);
-  status('');
+// Menu steps: home (your name) -> play (join with a code, or create) -> create.
+// An invite link (?join=CODE) joins as soon as the name is in.
+const show = (pane, keepStatus = false) => {
+  for (const id of ['home', 'play', 'create']) $('#' + id).classList.toggle('hidden', id !== pane);
+  if (!keepStatus) status('');
+  if (pane === 'home') $('#name').focus();
+  if (pane === 'play') { $('#helloName').textContent = playerName(); $('#code').focus(); }
 };
 document.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => show(b.dataset.go)));
 
-const params = new URLSearchParams(location.search);
-if (params.get('join')) {
-  $('#code').value = normalizeCode(params.get('join'));
-  show('join');
+const invite = normalizeCode(new URLSearchParams(location.search).get('join'));
+if (invite.length === 5) {
+  $('#code').value = invite;
+  $('#inviteCode').textContent = invite;
+  $('#inviteNote').classList.remove('hidden');
+  $('#doName').textContent = 'Join world';
 }
+// the address bar shows ?join=CODE while you play; a reload starts fresh
+history.replaceState(null, '', location.pathname);
+
+$('#doName').onclick = () => {
+  if (!$('#name').value.trim()) { status('Enter a name so friends know who you are.', true); $('#name').focus(); return; }
+  playerName();
+  if (invite.length === 5) joinWorld(invite);
+  else show('play');
+};
+$('#name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#doName').click(); });
+$('#name').focus();
 
 function status(text, err = false) {
   const s = $('#status');
@@ -84,31 +101,43 @@ $('#doCreate').onclick = async () => {
   }
 };
 
-$('#doJoin').onclick = async () => {
-  if (busy) return;
+$('#doJoin').onclick = () => {
   const code = normalizeCode($('#code').value);
   if (code.length !== 5) { status('World codes are 5 characters.', true); return; }
+  joinWorld(code);
+};
+
+async function joinWorld(code) {
+  if (busy) return;
   busy = true;
-  status('Connecting…');
+  status(`Joining world ${code}…`);
   const net = new Net();
   try {
     await net.join(code);
     const welcome = await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('The host did not respond.')), 10000);
+      let resend = 0;
+      const stop = () => { clearTimeout(t); clearInterval(resend); };
+      const t = setTimeout(() => { stop(); reject(new Error('The host did not respond. They may have left the world.')); }, 10000);
       net.on('message', (_f, msg) => {
-        if (msg.t === 'welcome') { clearTimeout(t); resolve(msg); }
-        if (msg.t === 'full') { clearTimeout(t); reject(new Error('That world is full (6 players max).')); }
+        if (msg.t === 'welcome') { stop(); resolve(msg); }
+        if (msg.t === 'full') { stop(); reject(new Error('That world is full (6 players max).')); }
       });
-      net.send({ t: 'hello', name: playerName() });
+      // say hello until the host answers: a first message can arrive before
+      // the host's side of the connection is ready to read it
+      const hello = () => net.send({ t: 'hello', name: playerName() });
+      hello();
+      resend = setInterval(hello, 1500);
     });
     enterGame({ net, seed: sanitizeSeed(welcome.seed), code, welcome });
   } catch (e) {
     net.close();
+    // land on the code screen with the reason, so they can retry or create a world
+    show('play', true);
     status(e.message, true);
   } finally {
     busy = false;
   }
-};
+}
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#doJoin').click(); });
 
 function enterGame({ net, seed, code, welcome }) {

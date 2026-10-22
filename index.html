@@ -17,14 +17,31 @@
       <h1 class="logo">CRUISEWAY</h1>
       <p class="tag">an endless road, shared with friends</p>
 
+      <!-- step 1: your name (an invite link joins straight after this) -->
       <div id="home" class="pane">
+        <p id="inviteNote" class="invite hidden">You've been invited to world <b id="inviteCode"></b></p>
         <label class="field">
           <span>Your name</span>
-          <input id="name" maxlength="16" placeholder="Driver" autocomplete="off" />
+          <input id="name" maxlength="16" placeholder="Enter your name" autocomplete="off" />
         </label>
         <div class="row">
-          <button class="btn primary" data-go="create">Create world</button>
-          <button class="btn" data-go="join">Join world</button>
+          <button class="btn primary wide" id="doName">Continue</button>
+        </div>
+      </div>
+
+      <!-- step 2: join with a code, or start a new world -->
+      <div id="play" class="pane hidden">
+        <p class="hello">Riding as <b id="helloName"></b> <button class="link" data-go="home">change</button></p>
+        <label class="field">
+          <span>Join a friend's world</span>
+          <div class="code-row">
+            <input id="code" class="code-input" maxlength="5" placeholder="CODE" autocomplete="off" />
+            <button class="btn primary" id="doJoin">Join</button>
+          </div>
+        </label>
+        <div class="or"><span>or</span></div>
+        <div class="row">
+          <button class="btn wide" data-go="create">Create a new world</button>
         </div>
       </div>
 
@@ -34,19 +51,8 @@
           <input id="seed" maxlength="32" placeholder="random" autocomplete="off" />
         </label>
         <div class="row">
-          <button class="btn" data-go="home">Back</button>
+          <button class="btn" data-go="play">Back</button>
           <button class="btn primary" id="doCreate">Create &amp; drive</button>
-        </div>
-      </div>
-
-      <div id="join" class="pane hidden">
-        <label class="field">
-          <span>World code</span>
-          <input id="code" class="code-input" maxlength="5" placeholder="ABCDE" autocomplete="off" />
-        </label>
-        <div class="row">
-          <button class="btn" data-go="home">Back</button>
-          <button class="btn primary" id="doJoin">Join</button>
         </div>
       </div>
 
