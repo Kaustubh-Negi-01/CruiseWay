@@ -22,7 +22,7 @@ export class Input {
       if (e.code === 'F3') { e.preventDefault(); if (!e.repeat) this.fire('stats', true); return; }
       if (e.code === 'Tab') e.preventDefault();
       if (!e.repeat) {
-        const action = { KeyR: 'reset', KeyC: 'camera', KeyM: 'map', KeyQ: 'radio', Tab: 'players', Escape: 'escape' }[e.code];
+        const action = { KeyR: 'reset', KeyC: 'camera', KeyM: 'map', KeyQ: 'radio', KeyV: 'vehicle', Tab: 'players', Escape: 'escape' }[e.code];
         if (action) this.fire(action, true);
       }
       this.keys.add(e.code);

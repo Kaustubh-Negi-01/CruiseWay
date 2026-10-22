@@ -6,6 +6,7 @@ import { RadioPanel } from './ui/radioPanel.js';
 import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
+import { VEHICLES } from './vehicle/vehicles.js';
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -124,7 +125,7 @@ async function joinWorld(code) {
       });
       // say hello until the host answers: a first message can arrive before
       // the host's side of the connection is ready to read it
-      const hello = () => net.send({ t: 'hello', name: playerName() });
+      const hello = () => net.send({ t: 'hello', name: playerName(), vehicle: game.vehicle });
       hello();
       resend = setInterval(hello, 1500);
     });
@@ -165,7 +166,7 @@ function enterGame({ net, seed, code, welcome }) {
 // Hidden while riding, like most games. It comes back by itself whenever a
 // menu, the map or a prompt is open, and Alt+C toggles it at any time.
 let cursorForced = false;
-const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt', '#radio'];
+const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt', '#radio', '#garage'];
 function updateCursor() {
   const menuOpen = cursorOverlays.some((s) => !$(s).classList.contains('hidden'));
   document.body.classList.toggle('no-cursor', game.running && !menuOpen && !cursorForced);
@@ -190,6 +191,43 @@ radio.setMaster(sound.settings.master);
 radio.on(() => sound.setDuck(radio.playing));
 input.on('radio', () => { if (game.running) radioPanel.toggle(); });
 
+// ---------------------------------------------------------------- vehicle (V)
+game.setVehicle(store.get('vehicle', 'bike'));
+function renderGarage() {
+  const list = $('#garageList');
+  list.innerHTML = '';
+  Object.entries(VEHICLES).forEach(([kind, v], i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'garage-item' + (game.vehicle === kind ? ' on' : '');
+    const bar = (label, x) => `<div class="g-stat"><span>${label}</span><i style="--w:${Math.round(x * 100)}%"></i></div>`;
+    b.innerHTML = `<div class="g-head"><kbd>${i + 1}</kbd><b>${v.label}</b>${game.vehicle === kind ? '<em>riding</em>' : ''}</div>
+      <p>${v.blurb}</p>${bar('Top speed', v.stats.speed)}${bar('Acceleration', v.stats.accel)}${bar('Grip', v.stats.grip)}`;
+    b.onclick = () => pickVehicle(kind);
+    list.appendChild(b);
+  });
+}
+function pickVehicle(kind) {
+  if (game.setVehicle(kind)) {
+    store.set('vehicle', kind);
+    ui.toast(`Now riding the ${VEHICLES[kind].label.toLowerCase()}.`);
+    $('#garage').classList.add('hidden');
+  }
+}
+input.on('vehicle', () => {
+  if (!game.running) return;
+  const g = $('#garage');
+  if (!g.classList.contains('hidden')) { g.classList.add('hidden'); return; }
+  closeOverlays();
+  renderGarage();
+  g.classList.remove('hidden');
+});
+addEventListener('keydown', (e) => {
+  if ($('#garage').classList.contains('hidden')) return;
+  const kind = Object.keys(VEHICLES)[Number(e.key) - 1];
+  if (kind) pickVehicle(kind);
+});
+
 // ---------------------------------------------------------------- in game
 
 $('#worldChip').onclick = async () => {
@@ -203,7 +241,7 @@ $('#worldChip').onclick = async () => {
   }
 };
 
-const overlays = ['#pause', '#mapOverlay'];
+const overlays = ['#pause', '#mapOverlay', '#garage'];
 const closeOverlays = () => { overlays.forEach((s) => $(s).classList.add('hidden')); ui.showSpotCard(null); };
 
 input.on('escape', () => {

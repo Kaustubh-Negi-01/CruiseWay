@@ -58,7 +58,7 @@
 
       <p id="status" class="status"></p>
     </div>
-    <p class="foot">WASD / arrows to ride · Space rear brake · R reset · C camera · M map · Esc menu</p>
+    <p class="foot">WASD / arrows to ride · Space rear brake · R reset · C camera · V vehicle · M map · Esc menu</p>
   </div>
 
   <!-- ===== In-game HUD ===== -->
@@ -188,6 +188,7 @@
           <li><kbd>Shift</kbd> (hold, 40+ km/h) — wheelie: watch the bar, steering gets twitchy</li>
           <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
           <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
+          <li><kbd>V</kbd> — vehicle: superbike or hypercar</li>
           <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
           <li><kbd>Q</kbd> — radio: search any song (YouTube) or live stations</li>
           <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>
@@ -199,6 +200,13 @@
         <button class="btn danger" id="leaveBtn">Leave world</button>
         <button class="btn primary" id="resumeBtn">Resume</button>
       </div>
+    </div>
+  </div>
+
+  <div id="garage" class="modal hidden">
+    <div class="card">
+      <h2>Choose your ride <small>(V or Esc to close)</small></h2>
+      <div id="garageList" class="garage-list"></div>
     </div>
   </div>
 

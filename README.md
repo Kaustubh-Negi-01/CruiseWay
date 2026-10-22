@@ -27,6 +27,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 - **A road network.** Paved roads meet at junctions, with dashed centre lines on straights and double lines through bends. Dirt roads and dead-end trails lead into the hills, and everywhere in between is open ground you can ride across.
 - **Same world for everyone.** The world seed decides everything (terrain, roads, trees and race spots), so every player builds the identical island on their own device. Terrain builds in a background worker with distance-based detail, so you can see about 2 km without stutter.
 - **The ride: an enclosed streamliner superbike.** Fat tyres, glowing hubless rims, and light strips in your colour. It leans into corners, and its suspension follows the ground smoothly. Grip differs on tarmac, dirt and grass. Tree trunks are solid. Ride into the sea and you're put back on the road.
+- **Two rides (V).**
+  - **Hubless superbike:** leans into corners and pulls wheelies.
+  - **Hypercar:** an original single-seater with a bubble canopy and a tall rear wing. It's faster and grippier, with no wheelies.
+  - Switch any time outside a race. Your pick is remembered, and other players see your vehicle.
 - **Map and GPS.**
   - Press <kbd>M</kbd> for a satellite-style map of the island.
   - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time.
@@ -58,6 +62,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | Shift (hold, 40+ km/h) | Wheelie. Watch the bar under the speedometer; steering gets twitchy. |
 | R | Reset to road (in a race: last checkpoint) |
 | C | Cycle camera |
+| V | Choose your vehicle: superbike or hypercar |
 | M | Map |
 | Q | Radio |
 | Enter / Backspace | Accept / dismiss a race prompt |
@@ -146,6 +151,8 @@ src/
   vehicle/
     bike.js                the bike model, its tuning, cockpit speedometer
     physics.js             riding physics: grip, lean, suspension, collisions
+    car.js                 the hypercar model and its tuning
+    vehicles.js            the list of rides for the V menu
 
   race/
     markers.js             start / checkpoint / finish gates and beacon

@@ -23,6 +23,7 @@ const BODY = { '#38e8ff': '#e2541f', '#ff4fd8': '#2b2f45', '#ffb627': '#1f6f8b',
 
 let ENV = null;
 export function setBikeEnvironment(envMap) { ENV = envMap; }
+export function getBikeEnvironment() { return ENV; }
 
 // Reflections dim at night and under cloud (the reflection map is a daytime sky).
 export function setEnvLevel(root, level) {
@@ -100,7 +101,7 @@ function treadTexture() {
 }
 
 let GLOW_TEX = null;
-function glowTexture() {
+export function glowTexture() {
   if (GLOW_TEX) return GLOW_TEX;
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -288,7 +289,7 @@ export function setBikeView(root, view) {
 
 // ---- digital speedometer ------------------------------------------------------
 
-function makeDash(color) {
+export function makeDash(color) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 300;
   const tex = new THREE.CanvasTexture(c);

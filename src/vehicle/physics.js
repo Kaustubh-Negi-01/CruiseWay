@@ -71,6 +71,12 @@ export class Bike {
     this.renderYaw = 0;
   }
 
+  // Switch rides (bike / car): tuning only, the bike keeps its place and speed.
+  setSpec(spec) {
+    this.spec = spec;
+    if (this.wheelie) { this.wheelie.active = false; this.wheelie.angle = 0; }
+  }
+
   get speed() { return Math.hypot(this.vel.x, this.vel.z); }
   get forwardSpeed() { return this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw); }
 
@@ -129,10 +135,11 @@ export class Bike {
     if (this.bodyY > gy + 0.35) this.bodyY = gy + 0.35;
 
     const vf = this.forwardSpeed;
-    this.wheelSpin += (vf / 0.31) * dt;
+    this.wheelSpin += (vf / (this.spec.wheelR || 0.31)) * dt;
     this.odometer += Math.abs(vf) * dt;
     // lean from the centripetal demand of the turn: tan(lean) = v * yawRate / g
-    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62);
+    // (a car rolls a little the other way: spec.lean scales and flips it)
+    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62) * (this.spec.lean ?? 1);
     this.lean += (target - this.lean) * (1 - Math.exp(-dt * 5));
     // front wheel up / down
     const w = this.wheelie;
@@ -151,7 +158,7 @@ export class Bike {
     const w = this.wheelie;
     if (w.active) {
       if (!input.wheelie || input.brake > 0 || vf < WHEELIE.dropSpeed || w.meter <= 0) this.endWheelie();
-    } else if (input.wheelie && this.onGround && vf > WHEELIE.minSpeed && !input.brake && w.meter >= WHEELIE.startMeter && w.rest <= 0) {
+    } else if (input.wheelie && s.wheelie !== false && this.onGround && vf > WHEELIE.minSpeed && !input.brake && w.meter >= WHEELIE.startMeter && w.rest <= 0) {
       w.active = true;
     }
     if (w.active) {
@@ -264,7 +271,7 @@ export class Bike {
     const trunks = this.world.gen.trunksNear(this.pos.x, this.pos.z, this.trunkBuf || (this.trunkBuf = []));
     for (const t of trunks) {
       const dx = this.pos.x - t.x, dz = this.pos.z - t.z;
-      const d = Math.hypot(dx, dz), min = t.r + 0.35;
+      const d = Math.hypot(dx, dz), min = t.r + (this.spec.radius || 0.35);
       if (d >= min || d < 1e-4) continue;
       const nx = dx / d, nz = dz / d;
       this.pos.x = t.x + nx * min;
@@ -296,7 +303,8 @@ export class Bike {
     this.orientation(model.quaternion);
     const ud = model.userData;
     poseLean(ud.lean, this.lean, this.wheelie.angle, this.spec.rearZ);
-    ud.steerer.rotation.y = this.steer * 0.25 * Math.max(0.2, 1 - this.speed / 30);
+    const sa = this.steer * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - this.speed / 30);
+    for (const st of ud.steerers || [ud.steerer]) st.rotation.y = sa;
     for (const w of ud.wheels) w.rotation.x = this.wheelSpin;
   }
 
