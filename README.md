@@ -1,16 +1,16 @@
 # CruiseWay
 
-**▶ Play now: [cruiseway.vercel.app](https://cruiseway.vercel.app)**. It runs in the browser on any laptop, with nothing to install. See [CHANGELOG.md](CHANGELOG.md) for everything that's been built so far.
+**▶ Play now: [cruiseway.vercel.app](https://cruiseway.vercel.app)**. It runs in the browser on any laptop or phone, with nothing to install (on phones you can also add it to your home screen as an app). See [CHANGELOG.md](CHANGELOG.md) for everything that's been built so far.
 
-An open-world island ride made to share with friends: golden-hour hills, a whole network of roads and dirt tracks, and race spots dotted around the map.
+An open-world island ride made to share with friends: hills under a day-night sky with changing weather, a whole network of roads and dirt tracks, race spots, and Manhunt arenas dotted around the map.
 
-Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together. Other riders show up as see-through ghost bikes with name tags.
+Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together on a superbike or a hypercar. Other riders show up as see-through ghosts with name tags.
 
 ## Features
 
 - **An island to explore.** About 8×8 km, with a coastline and the sea all round, and lakes in some valleys. Rolling hills, pine forests, lone trees and knee-high grass that sways in the wind, under a sky with drifting clouds and haze that glows toward the sun.
 - **Day, night and weather.**
-  - The world keeps time in fixed ticks, like Minecraft: 20 ticks a second, and 24,000 ticks (20 real minutes) to a full day. You get sunrise, a bright noon, golden hour, a purple dusk, and a starry night with a moon. The bike's headlight comes on at dusk and in bad weather.
+  - The world keeps time in fixed ticks, like Minecraft: 20 ticks a second, and 24,000 ticks (20 real minutes) to a full day. You get sunrise, a bright noon, golden hour, a purple dusk, and a starry night with a moon. Your headlight comes on at dusk and in bad weather.
   - Random weather that blends smoothly from one kind to the next over about a minute:
     - **Sunny:** the classic look.
     - **Cloudy:** a grey sky, the in-between weather before rain or snow and after it clears.
@@ -40,11 +40,12 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - **Winning:** whoever is IT when time runs out loses, and everyone else wins. Results show each rider's time as IT and tags made.
 - **Map and GPS.**
   - Press <kbd>M</kbd> for a satellite-style map of the island.
-  - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time.
+  - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time. Manhunt arenas have their own card with the rules.
   - Press *Set route* for turn-by-turn GPS along the roads, or click anywhere on the map to drop a waypoint.
   - The minimap rotates with you and shows your route.
 - **Race spots.**
-  - Nine spots on every island. Each has a fixed route along the network, a name, and a difficulty from Easy to Extreme. Difficulty comes from length, twistiness, climbing and dirt, ranked against the other spots on that island.
+  - Nine spots on every island, each with a name and a difficulty from 1 to 5 stars. Difficulty comes from length, twistiness, climbing and dirt, ranked against the other spots on that island.
+  - The 3-5 star spots (Hard, Expert, Extreme) are race spots with a fixed route along the network. The 1-2 star spots are Manhunt arenas (see above).
   - Ride up to a spot and *READY TO RACE?* pops up. Accept, and a lobby opens for 15 seconds so friends can ride over and join. Any member can press *Start now*.
   - Then everyone spawns on the same start line for a frozen 3-2-1, then go.
   - Holographic barriers line both sides of the route while you race, with room to run wide in bends. Brush one and you slide along it; hit one head-on and you lose a lot of speed. Racing is about clean lines, not shortcuts.
@@ -53,7 +54,8 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Results at the end, and the session leaderboard counts wins.
 - **Sound:**
   - The bike uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
-  - The hypercar uses its own recording, played as overlapping slices so it never audibly loops. Its pitch follows the revs through a seven-speed gearbox.
+  - The hypercar uses its own recording, played as overlapping slices so it never audibly loops. It's softened by a gentle filter, follows the revs through a seven-speed gearbox, and swells in from quiet as you pull away.
+  - Gear changes you can hear on both: a brief cut, a gearbox clunk, exhaust pops high in the revs, and a blip on downshifts.
   - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; rain, storm wind and thunder; a calm generative zen soundtrack.
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
@@ -92,10 +94,10 @@ Open the Esc menu to change these. They're remembered on each device.
 
 | Preset | What it does |
 | --- | --- |
-| **Auto** (default) | Runs Medium. If your machine can't hold the frame rate, it lowers resolution (down to 0.6×), then steps down to Low and then Eco. It never renders above native resolution. |
+| **Auto** (default on PC) | Runs Medium. If your machine can't hold the frame rate, it lowers resolution (down to 0.6×), then steps down to Low and then Eco. It never renders above native resolution. |
 | **Eco** | Coolest and quietest. 30 FPS, 0.7× resolution, no shadows, no anti-aliasing, short view distance, sparse grass. |
-| **Low** | 0.85× resolution, no anti-aliasing, bike shadow only, lighter terrain and grass. |
-| **Medium** | Native resolution, anti-aliasing, bike shadow only, about 1.5 km view. |
+| **Low** (default on phones) | 0.85× resolution, no anti-aliasing, vehicle shadow only, lighter terrain and grass. |
+| **Medium** | Native resolution, anti-aliasing, vehicle shadow only, about 1.5 km view. |
 | **High** | Up to 1.5× on HiDPI screens, tree shadows, full terrain detail, about 1.9 km view. |
 
 Rain and snow use fewer drops on lighter presets. They're drawn on the GPU in one draw call each, so weather costs almost nothing on the CPU. The **Weather** setting can be **Live** (the shared forecast) or **Always sunny**, which applies to your screen only.
@@ -115,7 +117,9 @@ Because of this, the whole game deploys as static files, and the world closes wh
 
 Players on different networks often can't connect directly, because home routers and mobile hotspots block it. Then the connection goes through a TURN relay. The game gets its STUN and TURN servers from a small Vercel function, `api/ice.js`, which mints short-lived TURN credentials so no secret ends up in the page.
 
-**Set up the relay (one time):**
+The live site's relay is set up and running on Cloudflare's free TURN service, so players on any network can join.
+
+**To set up a relay on your own deployment (one time):**
 1. Create a free Cloudflare account. In the dashboard, open Realtime → TURN Server and create a TURN key. The free tier covers 1,000 GB a month.
 2. In Vercel, open Project → Settings → Environment Variables. Add `CF_TURN_KEY_ID` (the key ID) and `CF_TURN_API_TOKEN` (the API token), then redeploy.
 3. To check it worked, open `https://cruiseway.vercel.app/api/ice`. It should show `"relay": true`.
