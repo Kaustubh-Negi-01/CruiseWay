@@ -158,12 +158,14 @@ export class SoundManager {
     if (!this.samples || this.voices) return;
     const ctx = this.ctx;
     this.rideGain = gain(ctx, 0, this.fx);
+    // the car's voices pass through a gentle low-pass: softer, no harsh top end
+    this.carTone = filter(ctx, 'lowpass', 2600, 0.5, this.rideGain);
     this.voices = {};
     for (const surface of Object.keys(SAMPLES)) {
       for (const band of BANDS) {
         if (SAMPLES[surface].grains) {
           const s = this.samples[surface][band];
-          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.regions, s.ref, this.rideGain);
+          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.regions, s.ref, this.carTone, 0.5);
           continue;
         }
         const g = gain(ctx, 0, this.rideGain);
@@ -239,10 +241,15 @@ export class SoundManager {
         // the clip's engine note sits near 85 Hz under load, about 3,400 rpm
         // here: play its slices at the note the revs ask for
         const load = Math.min(1.6, Math.max(0.75, rpm / 40 / 85));
+        // pulling away starts soft and swells as the revs climb, rather than
+        // jumping straight to full volume; fades are slower than the bike's
+        const swell = 0.4 + 0.6 * clamp01((rpm - E.idle) / (4800 - E.idle));
+        const Tc = 0.3;
         // (the clip's idle stretch is quiet coasting: lifted to sit like the bike's idle)
-        this.setVoice('caridle', wIdle * s * 2, 0.92 + throttle * 0.15, t, T);
-        this.setVoice('carlow', Math.sqrt(1 - idle) * s, load, t, T);
-        this.setVoice('carhigh', 0, load, t, T);
+        this.setVoice('caridle', wIdle * s * 2, 0.92 + throttle * 0.15, t, Tc);
+        this.setVoice('carlow', Math.sqrt(1 - idle) * s * swell, load, t, Tc);
+        this.setVoice('carhigh', 0, load, t, Tc);
+        this.carTone.frequency.setTargetAtTime(2600 + clamp01((rpm - E.idle) / (E.max - E.idle)) * 1400, t, 0.2);
         continue;
       }
       this.setVoice(set + 'idle', wIdle * s, 1, t, T);
@@ -252,6 +259,7 @@ export class SoundManager {
     // a little quieter when coasting than under throttle; on an upshift the
     // ignition cut makes the engine drop out for a moment
     if (shifting) this.rideGain.gain.setTargetAtTime(0.2, t, 0.012);
+    else if (car) this.rideGain.gain.setTargetAtTime(0.55 + throttle * 0.2, t, 0.35);
     else this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
   }
 
@@ -404,10 +412,11 @@ function noise(ctx, buffer, to) {
 // sounds continuous, with no repeating pattern. Each region carries its
 // engine note at its start and end; every slice is corrected to the voice's
 // reference note, so the stream holds one note and the game's revs set it.
-const GRAIN = 0.32, HOP = GRAIN / 2;
+const GRAIN = 0.32;
 const HALF_SINE = Float32Array.from({ length: 64 }, (_, i) => Math.sin((i / 63) * Math.PI));
 class GrainVoice {
-  constructor(ctx, buffer, regions, ref, out) {
+  constructor(ctx, buffer, regions, ref, out, grain = GRAIN) {
+    this.grain = grain;
     this.grains = true;
     this.ctx = ctx;
     this.buffer = buffer;
@@ -440,7 +449,7 @@ class GrainVoice {
     while (this.next < t + 0.3) {
       const at = this.next;
       const [a, b, fa, fb] = this.pick();
-      const span = GRAIN * this.rate * 1.6;                     // source time a slice may use
+      const span = this.grain * this.rate * 1.6;                     // source time a slice may use
       const off = a + Math.random() * Math.max(0.001, b - a - span);
       const k = this.ref / (fa + (fb - fa) * ((off + span / 2 - a) / (b - a)));
       const src = ctx.createBufferSource();
@@ -448,12 +457,12 @@ class GrainVoice {
       src.playbackRate.value = this.rate * k;
       const env = ctx.createGain();
       env.gain.value = 0;
-      env.gain.setValueCurveAtTime(HALF_SINE, at, GRAIN);
+      env.gain.setValueCurveAtTime(HALF_SINE, at, this.grain);
       src.connect(env).connect(this.g);
       src.start(at, off);
-      src.stop(at + GRAIN + 0.01);
-      this.active.push({ src, k, end: at + GRAIN });
-      this.next = at + HOP;
+      src.stop(at + this.grain + 0.01);
+      this.active.push({ src, k, end: at + this.grain });
+      this.next = at + this.grain / 2;
     }
   }
 }
