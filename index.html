@@ -80,10 +80,10 @@
       <div><b id="guideTitle"></b><small id="guideText"></small></div>
       <svg id="guideArrow" viewBox="0 0 40 40" width="30" height="30"><path d="M20 4 L31 32 L20 25 L9 32 Z" fill="currentColor"/></svg>
     </div>
-    <div id="lobbyBar" class="hidden"><span id="lobbyText"></span><button class="btn small primary hidden" id="lobbyGo">Start now</button></div>
+    <div id="lobbyBar" class="hidden"><span id="lobbyText"></span><div class="chips hidden" id="lobbyOpts"></div><button class="btn small primary hidden" id="lobbyGo">Start now</button></div>
     <div id="nav" class="hidden"><svg viewBox="0 0 40 40" width="34" height="34"><path id="navArrow" d="M20 4 L31 32 L20 25 L9 32 Z" fill="#38e8ff" stroke="#06222a" stroke-width="2" stroke-linejoin="round"/></svg><div><b id="navDist"></b><small id="navName"></small></div></div>
     <div id="spotPrompt" class="hidden">
-      <div class="sp-kicker">READY TO RACE?</div>
+      <div class="sp-kicker" id="spKicker">READY TO RACE?</div>
       <div class="sp-name" id="spName"></div>
       <div class="sp-meta" id="spMeta"></div>
       <div class="sp-busy hidden" id="spBusy"></div>
@@ -92,6 +92,7 @@
     <div id="standings" class="hidden"></div>
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div><div id="wheelie" class="slow"><span>WHEELIE</span><div class="wl-bar"><i></i></div><small>40+ km/h</small></div></div>
     <div id="countdown"></div>
+    <div id="huntDanger"></div>
     <div id="stats" class="hidden"></div>
     <div id="ytCard" class="hidden">
       <div id="ytPlayer"></div>
@@ -189,6 +190,7 @@
           <li><kbd>R</kbd> — reset to road (in a race: last checkpoint)</li>
           <li><kbd>C</kbd> — camera: chase · far chase · cockpit · nose</li>
           <li><kbd>V</kbd> — vehicle: superbike or hypercar</li>
+          <li><kbd>E</kbd> — Manhunt: use the IT's power-up</li>
           <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
           <li><kbd>Q</kbd> — radio: search any song (YouTube) or live stations</li>
           <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>

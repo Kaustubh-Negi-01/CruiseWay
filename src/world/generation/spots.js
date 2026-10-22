@@ -14,6 +14,10 @@ export const DIFFICULTY = [
   { label: 'Extreme', color: '#ef4f4f' },
 ];
 
+// The easy (1-2 star) spots host Manhunt instead of races.
+export const HUNT_STYLE = { label: 'Manhunt', color: '#b35cff' };
+export const spotStyle = (s) => (s.mode === 'hunt' ? HUNT_STYLE : DIFFICULTY[s.difficulty]);
+
 const PLACES = ['Pine', 'Copper', 'Granite', 'Hollow', 'Ember', 'Misty', 'Falcon', 'Harbor', 'Sable', 'Summit', 'Willow', 'Thunder', 'Amber', 'Cobalt', 'Juniper', 'Raven'];
 
 export class Route {
@@ -104,6 +108,7 @@ export function buildSpots(net, seed, count = 9) {
     return { id: idx, node: node.id, steps, route, ...describe(net, steps, route), startS: 14 };
   });
   rate(spots);
+  for (const s of spots) s.mode = s.difficulty <= 2 ? 'hunt' : 'race';
   const usedNames = new Set();
   for (const s of spots) s.name = nameFor(s, rand, usedNames);
   return spots;

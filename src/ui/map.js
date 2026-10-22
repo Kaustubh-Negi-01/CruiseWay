@@ -1,6 +1,6 @@
 import { MAP_EXTENT } from '../world/generation/terrainGen.js';
 import { KIND_DIRT } from '../world/generation/network.js';
-import { DIFFICULTY } from '../world/generation/spots.js';
+import { spotStyle } from '../world/generation/spots.js';
 
 // Island map: a satellite-style picture (terrain image from the worker with
 // the road network painted on top), plus live overlays — spots, riders,
@@ -193,7 +193,18 @@ export class MapView {
       this.flag(o.race.route.at(o.race.route.length - 1), '#ffffff', 'F');
     }
     if (o.waypoint) this.pin(o.waypoint);
-    for (const p of o.others || []) this.dot(p, p.color, 6, '#000', this.scale > 0.1 ? p.name : null);
+    if (o.zone) {
+      // the Manhunt zone
+      const [zx, zy] = this.toScreen(o.zone.x, o.zone.z);
+      ctx.save();
+      ctx.strokeStyle = '#c77dff'; ctx.lineWidth = 2.5; ctx.setLineDash([8, 5]);
+      ctx.beginPath(); ctx.arc(zx, zy, o.zone.r * this.scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    for (const p of o.others || []) {
+      if (p.it) this.dot(p, '#ff2b4a', 9, '#fff');      // the IT, ringed in red
+      this.dot(p, p.color, 6, '#000', this.scale > 0.1 ? (p.it ? p.name + ' · IT' : p.name) : null);
+    }
     if (o.me) this.arrow(o.me, o.yaw ?? 0);
     ctx.restore();
   }
@@ -246,7 +257,7 @@ export class MapView {
     const ctx = this.ctx;
     const p = s.route.at(s.startS);
     const [x, y] = this.toScreen(p.x, p.z);
-    const d = DIFFICULTY[s.difficulty];
+    const d = spotStyle(s);
     const r = selected || active ? 13 : 10;
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -256,12 +267,20 @@ export class MapView {
     ctx.shadowBlur = 0;
     ctx.fillStyle = d.color;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    // chequered flag glyph
-    ctx.fillStyle = '#111';
-    ctx.fillRect(x - 4, y - 6, 1.6, 12);
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
-      ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff';
-      ctx.fillRect(x - 2.4 + i * 2.4, y - 6 + j * 2.4, 2.4, 2.4);
+    if (s.mode === 'hunt') {
+      // target glyph for Manhunt arenas
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // chequered flag glyph
+      ctx.fillStyle = '#111';
+      ctx.fillRect(x - 4, y - 6, 1.6, 12);
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
+        ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff';
+        ctx.fillRect(x - 2.4 + i * 2.4, y - 6 + j * 2.4, 2.4, 2.4);
+      }
     }
     if (this.scale > 0.07 || selected) {
       ctx.font = '700 12px system-ui, sans-serif';

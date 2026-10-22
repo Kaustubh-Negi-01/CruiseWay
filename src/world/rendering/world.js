@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from '../generation/terrainGen.js';
 import { KIND_DIRT, ROAD_STEP } from '../generation/network.js';
-import { DIFFICULTY } from '../generation/spots.js';
+import { spotStyle } from '../generation/spots.js';
 import { patch, textures, raw, ATMOS } from './materials.js';
 import { GrassField } from './grass.js';
 import TerrainWorker from '../generation/terrain.worker.js?worker';
@@ -392,7 +392,7 @@ function makeSpotBeacons(spots) {
   const group = new THREE.Group();
   for (const s of spots) {
     const p = s.route.at(s.startS);
-    const color = new THREE.Color(DIFFICULTY[s.difficulty].color);
+    const color = new THREE.Color(spotStyle(s).color);
     const b = new THREE.Group();
     b.position.set(p.x, p.y, p.z);
     const ring = new THREE.Mesh(
@@ -420,14 +420,14 @@ function spotLabel(s) {
   const c = cv.getContext('2d');
   c.fillStyle = 'rgba(12,14,18,0.72)';
   c.beginPath(); c.roundRect(16, 16, 480, 128, 24); c.fill();
-  c.fillStyle = DIFFICULTY[s.difficulty].color;
+  c.fillStyle = spotStyle(s).color;
   c.fillRect(16, 16, 10, 128);
   c.fillStyle = '#fff';
   c.font = '700 44px system-ui, sans-serif';
   c.fillText(s.name, 48, 72);
   c.font = '500 30px system-ui, sans-serif';
   c.fillStyle = 'rgba(255,255,255,0.8)';
-  c.fillText(`${(s.length / 1000).toFixed(1)} km · ${'★'.repeat(s.difficulty)}${'☆'.repeat(5 - s.difficulty)} ${DIFFICULTY[s.difficulty].label}`, 48, 120);
+  c.fillText(s.mode === 'hunt' ? '◎ MANHUNT · 3+ riders' : `${(s.length / 1000).toFixed(1)} km · ${'★'.repeat(s.difficulty)}${'☆'.repeat(5 - s.difficulty)} ${spotStyle(s).label}`, 48, 120);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));

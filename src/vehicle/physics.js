@@ -194,11 +194,11 @@ export class Bike {
     this.onRoad = this.surface !== 0;
     const traction = this.onGround ? 1 : 0.04;
     const wet = this.pos.y < -0.5;   // riding into the sea or a lake
-    const top = s.maxSpeed * (this.surface === 1 ? 1 : this.surface === 2 ? s.dirtTop : s.offTop) * (wet ? 0.25 : 1) * (w.active ? 1.06 : 1);
+    const top = s.maxSpeed * (this.surface === 1 ? 1 : this.surface === 2 ? s.dirtTop : s.offTop) * (wet ? 0.25 : 1) * (w.active ? 1.06 : 1) * (this.boost ?? 1);
 
     if (input.throttle > 0) {
       if (vf < -0.5) vf += s.brake * input.throttle * dt * traction;
-      else vf += s.accel * (w.active ? 1.12 : 1) * input.throttle * Math.max(0, 1 - (vf / top) ** 2) * dt * traction;
+      else vf += s.accel * (w.active ? 1.12 : 1) * (this.boost ?? 1) * input.throttle * Math.max(0, 1 - (vf / top) ** 2) * dt * traction;
     }
     if (input.brake > 0) {
       if (vf > 0.5) vf -= s.brake * input.brake * dt * traction;

@@ -190,6 +190,7 @@ const radioPanel = new RadioPanel(radio);
 radio.setMaster(sound.settings.master);
 radio.on(() => sound.setDuck(radio.playing));
 input.on('radio', () => { if (game.running) radioPanel.toggle(); });
+input.on('power', (d) => { if (d && game.running) game.hunt.usePower(); });
 
 // ---------------------------------------------------------------- vehicle (V)
 game.setVehicle(store.get('vehicle', 'bike'));

@@ -9,6 +9,7 @@ import { ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeV
 import { vehicleFor } from '../vehicle/vehicles.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
+import { Manhunt, HUNT } from '../modes/manhunt.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
@@ -81,6 +82,7 @@ export class Game {
     this.previewing = false;
     this.bestTimes = {};       // spot id -> best time this session
     this.vehicle = 'bike';     // 'bike' | 'car' (V to switch)
+    this.hunt = new Manhunt(this);
     addEventListener('resize', () => this.resize());
     this.resize();
 
@@ -385,6 +387,7 @@ export class Game {
       const list = [];
       for (const [id, s] of this.latest) list.push({ id, ...s });
       this.net.broadcast({ t: 'sts', list });
+      this.hunt.hostTick();
     } else {
       this.net.send({ t: 'st', ...snap });
     }
@@ -397,6 +400,7 @@ export class Game {
     this.barriers?.dispose();
     this.barriers = null;
     this.ticker?.terminate();
+    this.hunt.cleanup();
     cancelAnimationFrame(this.raf);
     if (this.isHost) this.net.broadcast({ t: 'bye' });
     this.net?.close();
@@ -406,7 +410,7 @@ export class Game {
 
   resetCar() {
     const r = this.race;
-    if (r && r.participant) {
+    if (r && r.participant && r.mode !== 'hunt') {
       if (r.phase !== 'running' || r.finished) return;
       const s = r.next > 0 ? r.spot.checkpoints[r.next - 1] : r.spot.startS;
       const p = r.spot.route.at(s);
@@ -438,7 +442,7 @@ export class Game {
     this.updateCamera(dt);
     this.weather.update(dt, this.camera, this.wx, this.env.envLevel, this.renderer.domElement.height, this.headlight.intensity / HEADLIGHT);
     this.updateGhosts(now);
-    if (this.race) this.updateRace(now);
+    if (this.race) { if (this.race.mode === 'hunt') this.hunt.update(now, dt); else this.updateRace(now); }
     if (this.markers) this.markers.update(now / 1000);
     if (this.barriers) this.barriers.update(dt, this.camera.position);
     this.checkWater(dt);
@@ -454,7 +458,8 @@ export class Game {
       odometer: this.car.odometer,
       surface,
       me: this.car.pos, yaw: this.car.yaw,
-      others: [...this.players.values()].filter((p) => p.ghost).map((p) => ({ x: p.ghost.position.x, z: p.ghost.position.z, color: p.color, name: p.name })),
+      others: this.hunt.visibleOthers([...this.players.values()].filter((p) => p.ghost).map((p) => ({ x: p.ghost.position.x, z: p.ghost.position.z, color: p.color, name: p.name, it: !!p.isIt }))),
+      hunt: this.race?.mode === 'hunt' ? this.hunt.hudState() : null,
       race: this.race,
       lobby: this.lobby,
       nav: this.nav,
@@ -692,7 +697,7 @@ export class Game {
     const vx = sp > 0.1 ? c.vel.x / sp : 0, vz = sp > 0.1 ? c.vel.z / sp : 0;
     const r = this.race;
     let state = null, aim = null, label = '';
-    if (r && r.participant && r.phase === 'running' && !r.finished) {
+    if (r && r.participant && r.mode !== 'hunt' && r.phase === 'running' && !r.finished) {
       const route = r.spot.route;
       let q = route.nearestS(c.pos.x, c.pos.z, r.progressS, 320);
       if (q.d > 25) {
@@ -799,7 +804,7 @@ export class Game {
     if (d < SPOT_RADIUS && this.prompted == null && !(this.race && this.race.participant)) {
       this.prompted = spot.id;
       if (this.nav && this.nav.spot === spot) this.nav = null;
-      const busy = this.race ? `A race is running at ${this.world.spots[this.race.spot.id].name}. Try again when it ends.`
+      const busy = this.race ? `${this.race.mode === 'hunt' ? 'A Manhunt is on' : 'A race is running'} at ${this.world.spots[this.race.spot.id].name}. Try again when it ends.`
         : this.lobby && this.lobby.spot !== spot.id ? `Riders are gathering at ${this.world.spots[this.lobby.spot].name}.` : null;
       this.sound?.prompt();
       this.ui.spotPrompt(spot, this.bestTimes[spot.id], busy, (yes) => {
@@ -896,7 +901,7 @@ export class Game {
       roster: this.rosterList(),
       spawn: { x: this.car.pos.x, z: this.car.pos.z },
       lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
-      race: hr && hr.phase !== 'lobby' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
+      race: hr && hr.phase !== 'lobby' && hr.mode !== 'hunt' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
     });
   }
 
@@ -943,13 +948,17 @@ export class Game {
         if (!hr) {
           const secs = LOBBY_SECONDS;
           this.hostRace = {
-            id: Math.random().toString(36).slice(2, 8), spot: spot.id, phase: 'lobby',
+            id: Math.random().toString(36).slice(2, 8), spot: spot.id, phase: 'lobby', mode: spot.mode, minutes: HUNT.minutes[0],
             members: [from], endsAt: Date.now() + secs * 1000,
             participants: [], ready: new Set(), progress: new Map(), times: new Map(),
           };
           this.hostRace.lobbyTimer = setTimeout(() => this.launchRace(), secs * 1000);
           const who = this.players.get(from)?.name || 'Someone';
-          if (this.players.size > 1) this.sendAll({ t: 'toast', text: `${who} is ready to race at ${spot.name} — ${secs}s to join!` });
+          if (this.players.size > 1) {
+            this.sendAll({ t: 'toast', text: spot.mode === 'hunt'
+              ? `${who} wants a Manhunt at ${spot.name}: ride over to join (${HUNT.minPlayers}+ riders)!`
+              : `${who} is ready to race at ${spot.name} — ${secs}s to join!` });
+          }
         } else if (!hr.members.includes(from)) {
           hr.members.push(from);
         }
@@ -964,9 +973,16 @@ export class Game {
         break;
       }
       case 'lobby_go': {
-        if (hr && hr.phase === 'lobby' && hr.members.includes(from)) this.launchRace();
+        if (hr && hr.phase === 'lobby' && hr.members.includes(from)) {
+          if (hr.mode === 'hunt' && hr.members.length < HUNT.minPlayers) this.tell(from, { t: 'toast', text: `Manhunt needs at least ${HUNT.minPlayers} riders.` });
+          else this.launchRace();
+        }
         break;
       }
+      case 'hunt_minutes':
+      case 'hunt_use':
+        this.hunt.hostHandle(from, msg);
+        break;
       case 'race_ready': {
         if (!hr || hr.id !== msg.id || hr.phase !== 'spawn') return;
         hr.ready.add(from);
@@ -997,7 +1013,7 @@ export class Game {
 
   lobbyPub() {
     const hr = this.hostRace;
-    return { spot: hr.spot, members: hr.members.slice(), secondsLeft: Math.max(0, (hr.endsAt - Date.now()) / 1000) };
+    return { spot: hr.spot, members: hr.members.slice(), secondsLeft: Math.max(0, (hr.endsAt - Date.now()) / 1000), mode: hr.mode, minutes: hr.minutes, need: HUNT.minPlayers };
   }
 
   cancelLobby() {
@@ -1023,6 +1039,8 @@ export class Game {
       hr.members = hr.members.filter((m) => m !== id);
       if (!hr.members.length) this.cancelLobby();
       else this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
+    } else if (hr.mode === 'hunt') {
+      if (hr.participants.includes(id)) this.hunt.hostLeave(id);
     } else if (hr.phase === 'spawn') {
       if (hr.participants.every((k) => hr.ready.has(k) || !this.players.has(k))) this.beginCountdown();
     } else {
@@ -1035,6 +1053,17 @@ export class Game {
     const hr = this.hostRace;
     if (!hr || hr.phase !== 'lobby') return;
     clearTimeout(hr.lobbyTimer);
+    if (hr.mode === 'hunt') {
+      // not enough riders yet: keep the lobby open another 15 s
+      if (hr.members.filter((id) => this.players.has(id)).length < HUNT.minPlayers) {
+        hr.endsAt = Date.now() + LOBBY_SECONDS * 1000;
+        hr.lobbyTimer = setTimeout(() => this.launchRace(), LOBBY_SECONDS * 1000);
+        this.sendAll({ t: 'lobby', lobby: this.lobbyPub() });
+        return;
+      }
+      this.hunt.launch(hr);
+      return;
+    }
     hr.participants = hr.members.filter((id) => this.players.has(id));
     if (!hr.participants.length) { this.cancelLobby(); return; }
     hr.phase = 'spawn';
@@ -1048,6 +1077,7 @@ export class Game {
     if (!hr || hr.phase !== 'spawn') return;
     clearTimeout(hr.readyTimer);
     hr.phase = 'running';
+    if (hr.mode === 'hunt') this.hunt.countdown(hr);
     this.sendAll({ t: 'race_countdown', id: hr.id });
   }
 
@@ -1078,6 +1108,7 @@ export class Game {
     const hr = this.hostRace;
     if (!hr) return;
     if (hr.phase === 'lobby') { this.cancelLobby(); return; }
+    if (hr.mode === 'hunt') { this.hunt.end(cancelled); return; }
     for (const t of ['lobbyTimer', 'readyTimer', 'graceTimer']) clearTimeout(hr[t]);
     const standings = this.standings();
     // a win only counts when someone actually beat somebody else
@@ -1123,7 +1154,8 @@ export class Game {
         const l = msg.lobby;
         this.lobby = l ? { ...l, spotObj: this.world.spots[l.spot], endsAt: performance.now() + l.secondsLeft * 1000 } : null;
         const member = !!l && l.members.includes(this.selfId);
-        this.ui.lobby(this.lobby, member, this.lobby && this.lobby.members.map((id) => this.players.get(id)?.name || '…'), () => this.toHost({ t: 'lobby_go' }));
+        this.ui.lobby(this.lobby, member, this.lobby && this.lobby.members.map((id) => this.players.get(id)?.name || '…'), () => this.toHost({ t: 'lobby_go' }),
+          this.isHost ? (m) => this.toHost({ t: 'hunt_minutes', m }) : null);
         break;
       }
       case 'race_start':
@@ -1140,6 +1172,13 @@ export class Game {
         break;
       case 'race_end':
         this.endRaceLocal(msg);
+        break;
+      case 'hunt_start':
+      case 'hunt_tag':
+      case 'hunt_power':
+      case 'hunt_shock':
+      case 'hunt_end':
+        this.hunt.clientHandle(msg);
         break;
     }
   }
