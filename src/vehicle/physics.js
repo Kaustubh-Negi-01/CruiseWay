@@ -260,20 +260,27 @@ export class Bike {
     }
 
     const h = this.world.heightAt(this.pos.x, this.pos.z);
+    const wasOnGround = this.onGround;
     this.vel.y -= G * dt;
     this.pos.y += this.vel.y * dt;
-    if (this.pos.y <= h) {
+    // Stay planted unless the ground really falls away: like real suspension,
+    // the tyres follow small crests and dips instead of taking off.
+    const stick = wasOnGround && this.pos.y - h < 0.25;
+    if (this.pos.y <= h || stick) {
       // touching down after some air: report how hard we landed
       if (this.airTime > 0.25) this.onImpact?.('land', Math.min(20, -this.vel.y));
       this.airTime = 0;
       this.pos.y = h;
-      this.vel.y = clamp((h - this.lastGround) / dt, -30, 9);
       this.onGround = true;
       this.world.normalAt(this.pos.x, this.pos.z, this.normal);
+      // vertical speed from the slope we're driving along, not from how far the
+      // ground moved since the last tick (a small step there used to fling
+      // the bike up at 9 m/s)
+      const n = this.normal;
+      this.vel.y = clamp(-(n.x * this.vel.x + n.z * this.vel.z) / Math.max(0.3, n.y), -30, 9);
     } else {
-      this.onGround = this.pos.y - h < 0.12;
-      if (this.onGround) this.world.normalAt(this.pos.x, this.pos.z, this.normal);
-      else this.airTime += dt;
+      this.onGround = false;
+      this.airTime += dt;
     }
     this.lastGround = h;
   }

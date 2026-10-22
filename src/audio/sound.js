@@ -27,8 +27,12 @@ const ENGINES = {
 const SAMPLES = {
   road: { file: 'engine-road.mp3',    idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
   off:  { file: 'engine-offroad.mp3', idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
-  // idle, steady cruise, and a hard pull, cut from the Porsche recording
-  car:  { file: 'engine-car.wav',     idle: [0.0, 0.6], low: [0.85, 3.1], high: [3.35, 4.7], gain: 1.0 },
+  // idle, 8 s of steady cruise, and a 3.9 s full-throttle pull, cut from the
+  // Porsche recording. Played as overlapping random slices (grains) rather
+  // than loops, so nothing audibly repeats. The pull's revs rise from about
+  // 92 to 174 Hz firing pitch; each slice is pitch-corrected to hold steady.
+  car:  { file: 'engine-car.wav', idle: [0.0, 0.85], low: [0.85, 8.85], high: [8.85, 12.75], gain: 1.0,
+          grains: true, pitch: { high: [92, 174] } },
 };
 const BANDS = ['idle', 'low', 'high'];
 
@@ -80,7 +84,11 @@ export class SoundManager {
       this.samples = {};
       keys.forEach((k, i) => {
         this.samples[k] = {};
-        for (const band of BANDS) this.samples[k][band] = makeLoop(ctx, decoded[i], ...SAMPLES[k][band]);
+        for (const band of BANDS) {
+          this.samples[k][band] = SAMPLES[k].grains
+            ? { buffer: decoded[i], region: SAMPLES[k][band], pitch: SAMPLES[k].pitch?.[band] }
+            : makeLoop(ctx, decoded[i], ...SAMPLES[k][band]);
+        }
       });
       if (this.riding) this.startVoices();
     } catch (e) {
@@ -150,6 +158,11 @@ export class SoundManager {
     this.voices = {};
     for (const surface of Object.keys(SAMPLES)) {
       for (const band of BANDS) {
+        if (SAMPLES[surface].grains) {
+          const s = this.samples[surface][band];
+          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.region, s.pitch, this.rideGain);
+          continue;
+        }
         const g = gain(ctx, 0, this.rideGain);
         const src = ctx.createBufferSource();
         src.buffer = this.samples[surface][band];
@@ -280,6 +293,7 @@ export class SoundManager {
   setVoice(k, w, rate, t, T) {
     const v = this.voices[k];
     v.g.gain.setTargetAtTime(w, t, T);
+    if (v.grains) { v.setRate(rate, t, T); if (w > 0.002 || v.active.length) v.pump(t); return; }
     v.src.playbackRate.setTargetAtTime(rate, t, T);
   }
 
@@ -371,6 +385,66 @@ function noise(ctx, buffer, to) {
   const s = ctx.createBufferSource(); s.buffer = buffer; s.loop = true; s.connect(to);
   s.start(ctx.currentTime, Math.random() * buffer.duration); return s;
 }
+// An engine voice that never loops: it keeps playing short overlapping
+// slices of a recording, each from a random point in its section, with
+// equal-power crossfades. Engine sound has no melody, so the stitched result
+// sounds continuous, with no repeating pattern. If the section's pitch rises
+// (a full-throttle pull), pitch: [startHz, endHz] corrects each slice so the
+// stream holds one note and the game's revs set the pitch instead.
+const GRAIN = 0.32, HOP = GRAIN / 2;
+const HALF_SINE = Float32Array.from({ length: 64 }, (_, i) => Math.sin((i / 63) * Math.PI));
+class GrainVoice {
+  constructor(ctx, buffer, region, pitch, out) {
+    this.grains = true;
+    this.ctx = ctx;
+    this.buffer = buffer;
+    this.region = region;
+    this.pitch = pitch;
+    this.ref = pitch ? (pitch[0] + pitch[1]) / 2 : 1;
+    this.g = gain(ctx, 0, out);
+    this.rate = 1;
+    this.next = 0;
+    this.active = [];
+  }
+
+  // the section's own pitch at offset t (linear across a rising pull)
+  correction(t) {
+    if (!this.pitch) return 1;
+    const [a, b] = this.region, f = this.pitch[0] + (this.pitch[1] - this.pitch[0]) * ((t - a) / (b - a));
+    return this.ref / f;
+  }
+
+  setRate(rate, t, T) {
+    this.rate = rate;
+    for (const gr of this.active) gr.src.playbackRate.setTargetAtTime(rate * gr.k, t, T);
+  }
+
+  // keep ~0.3 s of slices scheduled ahead
+  pump(t) {
+    const ctx = this.ctx;
+    this.active = this.active.filter((gr) => gr.end > t);
+    if (this.next < t) this.next = t + 0.01;
+    while (this.next < t + 0.3) {
+      const at = this.next;
+      const [a, b] = this.region;
+      const span = GRAIN * this.rate * 1.4;                     // source time a slice may use
+      const off = a + Math.random() * Math.max(0.001, b - a - span);
+      const k = this.correction(off + span / 2);
+      const src = ctx.createBufferSource();
+      src.buffer = this.buffer;
+      src.playbackRate.value = this.rate * k;
+      const env = ctx.createGain();
+      env.gain.value = 0;
+      env.gain.setValueCurveAtTime(HALF_SINE, at, GRAIN);
+      src.connect(env).connect(this.g);
+      src.start(at, off);
+      src.stop(at + GRAIN + 0.01);
+      this.active.push({ src, k, end: at + GRAIN });
+      this.next = at + HOP;
+    }
+  }
+}
+
 // Cut [a, b] seconds out of a clip as a seamless loop: the last 0.25 s is
 // blended into the first 0.25 s so the seam can't be heard.
 function makeLoop(ctx, buf, a, b) {

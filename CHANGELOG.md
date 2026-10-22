@@ -2,6 +2,18 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
+## 1.2 · Smooth roads, better car sound
+
+- **No more jumps at junctions and bends:**
+  - Roads now level out smoothly into the round junction pads, so there's no step at their rim.
+  - Where two roads (or two parts of a hairpin) are about equally close, their heights blend instead of flipping between them.
+  - Vertical speed comes from the slope you're driving on, not from how far the ground moved in the last 1/120 s, so a small step can't fling you up at 9 m/s.
+  - Tyres stay planted over small crests and dips, like real suspension.
+  - Results: across 202 km of road lanes in three worlds, sharp-bump spots went from 964 to 182 (0 at junctions), and the worst kink is a third as sharp. Riding at 100 km/h through 30 junctions on each vehicle, neither left the ground once.
+- **Car engine without the loop:**
+  - The hypercar's engine now plays overlapping random slices from 8 s of cruise and 3.9 s of full throttle, instead of a 2–3 s loop, so there's no repeating cycle.
+  - Slices from the rising full-throttle pull are pitch-corrected, so the game's revs set the pitch.
+
 ## 1.1 · Hypercar, menus and joining
 
 - **Hypercar:**
