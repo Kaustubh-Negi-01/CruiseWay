@@ -147,7 +147,14 @@ To publish by hand from a local checkout that's linked to the project:
 npx vercel deploy --prod
 ```
 
-Optional: song search uses public [Invidious](https://invidious.io) servers, which can be busy or go offline. For more reliable search, create a YouTube Data API v3 key and set it as the `VITE_YOUTUBE_API_KEY` environment variable (in Vercel: Project → Settings → Environment Variables, then redeploy). Restrict the key to your site's domain, because it ends up in the page.
+**Radio song search (one time).** The radio searches YouTube through a small Vercel function, `api/search.js`, which uses the official YouTube Data API v3. The key stays on the server, and every search is cached for a day, so repeat searches and the suggestion chips are free. The free quota allows about 100 new searches a day.
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project (any name).
+2. Open **APIs & Services → Library**, search for **YouTube Data API v3**, and click **Enable**.
+3. Open **APIs & Services → Credentials → Create credentials → API key**, then copy it. Click the key, and under **API restrictions** choose **Restrict key → YouTube Data API v3**, then save.
+4. In Vercel, open Project → Settings → Environment Variables. Add `YOUTUBE_API_KEY` with that key (for Production and Preview), then redeploy.
+5. To check it worked, open `https://cruiseway.vercel.app/api/search?q=coldplay`. It should list songs.
+
+Without the key, the radio's Songs tab says search isn't switched on, and Live radio still works.
 
 Invite friends with a link that includes your world code: `https://cruiseway.vercel.app/?join=CODE`.
 
@@ -228,5 +235,5 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 
 ## Credits
 
-- Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search goes through public [Invidious](https://invidious.io) servers, or the YouTube Data API if a key is set. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
+- Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search uses the official YouTube Data API through the site's own `/api/search` function, with public [Invidious](https://invidious.io) servers as a last-resort fallback. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
 - Riding sound: the three recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`), an ElevenLabs-generated off-road clip (`engine-offroad.mp3`), and an ElevenLabs-generated car clip for the hypercar (`engine-car.mp3`). The other effects and the music are generated in code.

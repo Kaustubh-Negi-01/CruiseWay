@@ -12,9 +12,9 @@
 // at least 200×200 px and don't allow hidden or audio-only playback. Give the
 // module a container that is shown on screen while music plays.
 //
-// Search: if an `apiKey` (YouTube Data API v3) is given, it's used first;
-// otherwise public Invidious servers are tried in turn (their list is fetched
-// from api.invidious.io), falling back from one to the next.
+// Search: the site's /api/search function (official YouTube Data API v3, with
+// the key on the server) first; then a browser-side `apiKey` if given; then
+// public Invidious servers (mostly offline these days) as a last resort.
 
 const IFRAME_API = 'https://www.youtube.com/iframe_api';
 const INVIDIOUS_DIRECTORY = 'https://api.invidious.io/instances.json?sort_by=type,users';
@@ -115,13 +115,32 @@ export class YouTubeRadio {
   // ---- search --------------------------------------------------------------------
 
   // Returns up to `limit` videos: { id, title, author, duration (s), thumb }.
+  // Search order: the site's own /api/search (official YouTube API, key kept
+  // on the server, results cached for a day), then a browser-side key if one
+  // was built in, then public Invidious servers as a last resort.
   async search(query, limit = 20) {
     query = String(query || '').trim();
     if (!query) return [];
+    let notConfigured = false;
+    try { return await this.searchServer(query, limit); } catch (e) { notConfigured = e.code === 'not-configured'; }
     if (this.apiKey) {
-      try { return await this.searchOfficial(query, limit); } catch { /* fall through to Invidious */ }
+      try { return await this.searchOfficial(query, limit); } catch { /* next */ }
     }
-    return this.searchInvidious(query, limit);
+    try {
+      return await this.searchInvidious(query, limit);
+    } catch (e) {
+      if (notConfigured) { const err = new Error('Song search is not set up'); err.code = 'not-configured'; throw err; }
+      throw e;
+    }
+  }
+
+  async searchServer(query, limit) {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(query), { signal: AbortSignal.timeout(9000) });
+    if (r.status === 503) { const e = new Error('not configured'); e.code = 'not-configured'; throw e; }
+    if (!r.ok) throw new Error('search ' + r.status);
+    const j = await r.json();
+    if (!Array.isArray(j.items)) throw new Error('unexpected reply');
+    return j.items.slice(0, limit);
   }
 
   async searchOfficial(query, limit) {
