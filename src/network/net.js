@@ -8,6 +8,21 @@ const PREFIX = 'cruiseway-v1-';
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const MAX_PLAYERS = 6;
 
+// STUN finds each player's public address; TURN relays the connection when
+// two networks can't reach each other directly. The deployed site serves
+// short-lived TURN credentials from /api/ice (see api/ice.js); without it
+// we fall back to STUN only.
+const FALLBACK_ICE = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+let icePromise = null;
+function iceServers() {
+  icePromise ||= fetch('/api/ice', { signal: AbortSignal.timeout(4000) })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+    .then((j) => (Array.isArray(j.iceServers) && j.iceServers.length ? j.iceServers : FALLBACK_ICE))
+    .catch(() => FALLBACK_ICE);
+  return icePromise;
+}
+const peerOptions = async () => ({ debug: 0, config: { iceServers: await iceServers() } });
+
 export function makeCode() {
   let s = '';
   for (let i = 0; i < 5; i++) s += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
@@ -35,11 +50,12 @@ export class Net {
 
   // ---- host -------------------------------------------------------------
 
-  host(tries = 4) {
+  async host(tries = 4) {
     this.isHost = true;
+    const opts = await peerOptions();
     return new Promise((resolve, reject) => {
       const code = makeCode();
-      const peer = new Peer(PREFIX + code, { debug: 0 });
+      const peer = new Peer(PREFIX + code, opts);
       let opened = false;
       peer.on('open', () => {
         opened = true;
@@ -95,14 +111,15 @@ export class Net {
 
   // ---- guest ------------------------------------------------------------
 
-  join(code) {
+  async join(code) {
     this.isHost = false;
+    const opts = await peerOptions();
     return new Promise((resolve, reject) => {
-      const peer = new Peer({ debug: 0 });
+      const peer = new Peer(opts);
       this.peer = peer;
       let connected = false;
       const timer = setTimeout(() => {
-        if (!connected) { peer.destroy(); reject(new Error('Could not reach that world. Check the code and try again.')); }
+        if (!connected) { peer.destroy(); reject(new Error("Found the world but couldn't connect to the host's network. Try again, or have the host check their connection.")); }
       }, 15000);
       peer.on('error', (err) => {
         if (!connected) { clearTimeout(timer); peer.destroy(); reject(friendlyError(err)); }

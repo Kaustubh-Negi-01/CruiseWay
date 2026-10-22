@@ -92,7 +92,14 @@ There is no game server. The host's browser *is* the server:
 
 Because of this, the whole game deploys as static files, and the world closes when the host leaves.
 
-Known limitation: on some very strict networks (some corporate or campus Wi-Fi) WebRTC can't connect peers directly. Fixing that means adding a TURN server to the `Peer` config in `src/net.js`.
+Players on different networks often can't connect directly, because home routers and mobile hotspots block it. Then the connection goes through a TURN relay. The game gets its STUN and TURN servers from a small Vercel function, `api/ice.js`, which mints short-lived TURN credentials so no secret ends up in the page.
+
+**Set up the relay (one time):**
+1. Create a free Cloudflare account. In the dashboard, open Realtime → TURN Server and create a TURN key. The free tier covers 1,000 GB a month.
+2. In Vercel, open Project → Settings → Environment Variables. Add `CF_TURN_KEY_ID` (the key ID) and `CF_TURN_API_TOKEN` (the API token), then redeploy.
+3. To check it worked, open `https://cruiseway.vercel.app/api/ice`. It should show `"relay": true`.
+
+Any other TURN provider works too: set `TURN_URLS`, `TURN_USERNAME` and `TURN_CREDENTIAL` instead. Without a relay, players on strict networks see "couldn't connect to the host's network".
 
 ## Run locally
 
