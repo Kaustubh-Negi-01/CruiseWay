@@ -8,6 +8,22 @@ export const PAVED_HALF = 4.6;
 export const DIRT_HALF = 2.9;
 export const KIND_PAVED = 1, KIND_DIRT = 2;
 const STEP = 3;      // metres between road samples
+const BLEND_GAP = 3; // metres over which two nearby roads' heights blend
+
+// Nearest-road query state: the best sample and the best from another stretch.
+const newQuery = () => ({ d: Infinity, e: -1, i: -1, node: -1, d2: Infinity, e2: -1, i2: -1, node2: -1 });
+function resetQuery(q) { q.d = q.d2 = Infinity; q.e = q.e2 = q.node = q.node2 = -1; }
+// Same stretch of road: the same junction, or samples close along one road.
+const sameStretch = (e, i, node, e2, i2, node2) =>
+  node >= 0 || node2 >= 0 ? node === node2 : e === e2 && Math.abs(i - i2) <= 4;
+function offer(q, d, e, i, node) {
+  if (d < q.d) {
+    if (q.d < Infinity && !sameStretch(q.e, q.i, q.node, e, i, node)) { q.d2 = q.d; q.e2 = q.e; q.i2 = q.i; q.node2 = q.node; }
+    q.d = d; q.e = e; q.i = i; q.node = node;
+  } else if (d < q.d2 && !sameStretch(q.e, q.i, q.node, e, i, node)) {
+    q.d2 = d; q.e2 = e; q.i2 = i; q.node2 = node;
+  }
+}
 const CELL = 40;     // spatial grid cell
 const MIN_NODE_GAP = 760;
 
@@ -167,9 +183,15 @@ export class RoadNetwork {
     for (const e of this.edges) {
       const offA = this.nodes[e.a].y - e.y[0], offB = this.nodes[e.b].y - e.y[e.n - 1];
       const blend = Math.min(160, e.length * 0.45);
+      const nA = this.nodes[e.a], nB = this.nodes[e.b];
       for (let i = 0; i < e.n; i++) {
         const s = i * STEP;
         e.y[i] += offA * (1 - smoothstep(0, blend, s)) + offB * (1 - smoothstep(0, blend, e.length - s));
+        // level out into each junction pad, so the flat disc meets the road
+        // with no step at its rim
+        const fa = smoothstep(nA.disc * 0.5, nA.disc + 18, s), fb = smoothstep(nB.disc * 0.5, nB.disc + 18, e.length - s);
+        e.y[i] = nA.y + (e.y[i] - nA.y) * fa;
+        e.y[i] = nB.y + (e.y[i] - nB.y) * fb;
         e.y[i] = Math.max(1.5, e.y[i]);
       }
       // tangents
@@ -210,8 +232,8 @@ export class RoadNetwork {
     const reach = maxR + PAVED_HALF + CELL;
     const r = Math.ceil(reach / CELL);
     const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
-    const q = this.q || (this.q = { d: Infinity, e: -1, i: -1, node: -1 });
-    q.d = Infinity; q.e = -1; q.node = -1;
+    const q = this.q || (this.q = newQuery());
+    resetQuery(q);
     for (let dz = -r; dz <= r; dz++) {
       for (let dx = -r; dx <= r; dx++) {
         const arr = this.grid.get(cellKey(cx + dx, cz + dz));
@@ -224,36 +246,53 @@ export class RoadNetwork {
 
   // Back-compat for callers holding their own candidate list (the worker).
   scan(list, x, z) {
-    const q = this.q2 || (this.q2 = { d: Infinity, e: -1, i: -1, node: -1 });
-    q.d = Infinity; q.e = -1; q.node = -1;
+    const q = this.q2 || (this.q2 = newQuery());
+    resetQuery(q);
     this.scanInto(list, x, z, q);
     return this.resolve(q, x, z);
   }
 
-  // Find the closest sample (by distance to the road edge) without allocating.
+  // Find the closest sample (by distance to the road edge) without
+  // allocating, plus the closest one from a different stretch of road (another
+  // road, a junction pad, or the far side of a hairpin), so resolve() can blend
+  // the two instead of jumping between their heights.
   scanInto(list, x, z, q) {
     for (let n = 0; n < list.length; n++) {
       const v = list[n];
       if (v < 0) {
         const nd = this.nodes[-v - 1];
-        const d = Math.sqrt((x - nd.x) ** 2 + (z - nd.z) ** 2) - nd.disc;
-        if (d < q.d) { q.d = d; q.node = nd.id; q.e = -1; }
+        offer(q, Math.sqrt((x - nd.x) ** 2 + (z - nd.z) ** 2) - nd.disc, -1, -1, nd.id);
         continue;
       }
       const e = this.edges[(v / 65536) | 0], i = v & 65535;
       const dx = e.x[i] - x, dz = e.z[i] - z;
-      const d = Math.sqrt(dx * dx + dz * dz) - e.half;
-      if (d < q.d) { q.d = d; q.e = e.id; q.i = i; q.node = -1; }
+      offer(q, Math.sqrt(dx * dx + dz * dz) - e.half, e.id, i, -1);
     }
   }
 
-  resolve(q, x, z) {
-    if (q.node >= 0) {
-      const nd = this.nodes[q.node];
-      return { edgeDist: q.d, y: nd.y, kind: nd.kind, x: nd.x, z: nd.z, tx: 0, tz: 1, edge: nd.edges[0], s: null, node: nd.id };
+  one(e, i, node, x, z) {
+    if (node >= 0) {
+      const nd = this.nodes[node];
+      return { edgeDist: Math.hypot(x - nd.x, z - nd.z) - nd.disc, y: nd.y, kind: nd.kind, x: nd.x, z: nd.z, tx: 0, tz: 1, edge: nd.edges[0], s: null, node: nd.id };
     }
-    if (q.e < 0) return null;
-    return this.project(this.edges[q.e], q.i, x, z);
+    if (e < 0) return null;
+    return this.project(this.edges[e], i, x, z);
+  }
+
+  // Height comes from a soft blend of the nearest two stretches of road,
+  // weighted by how close each is, so it changes smoothly where one takes
+  // over from the other (junctions, roads running side by side, hairpins).
+  resolve(q, x, z) {
+    const a = this.one(q.e, q.i, q.node, x, z);
+    // (the runner-up can end up on the same stretch as the winner after the
+    // winner changes mid-scan; a road never blends with itself)
+    if (!a || q.d2 - q.d > BLEND_GAP * 2 || sameStretch(q.e, q.i, q.node, q.e2, q.i2, q.node2)) return a;
+    const b = this.one(q.e2, q.i2, q.node2, x, z);
+    if (!b) return a;
+    const wb = Math.exp(-Math.max(0, b.edgeDist - a.edgeDist) / BLEND_GAP * 3);
+    if (wb < 0.01) return a;
+    a.y = (a.y + b.y * wb) / (1 + wb);
+    return a;
   }
 
   project(e, i, x, z) {
