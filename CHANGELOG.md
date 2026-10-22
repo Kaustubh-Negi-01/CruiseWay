@@ -2,7 +2,9 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-## 1.4 · Phones
+0.1–0.7 were built on 21 October 2026, and 0.8–1.4 on 22 October 2026.
+
+## 1.4 · Phones and joining from any network · 22 Oct 2026
 
 - **Landscape + full screen:**
   - The first tap anywhere goes full screen and locks landscape (browsers need a tap before they allow full screen).
@@ -17,8 +19,9 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - **Compact HUD** for short landscape screens. The pause menu's Controls tab explains the touch controls.
 - **Phone extras:** Low graphics by default, vibration on hits, tags, checkpoints and power-ups (Android), and the screen stays awake while riding.
 - **The radio is PC-only:** its YouTube player needs a large visible box, and phones play music from their own apps alongside the game.
+- **Joining from any network:** the TURN relay is now switched on, running on Cloudflare's free TURN service. Players whose networks can't connect directly (the Mac join failures, strict home routers, mobile data) now connect through the relay. `/api/ice` reports `"relay": true`, and the relay was confirmed to hand out connections.
 
-## 1.3 · Manhunt
+## 1.3 · Manhunt · 22 Oct 2026
 
 - **New mode, Manhunt:** tag with vehicles for 3+ riders. The 1-2 star race spots are now purple Manhunt arenas.
 - **Lobby:** the host chooses 3, 5 or 8 minutes. The lobby waits until 3 riders are in.
@@ -32,7 +35,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
   - The IT's minimap hides runners beyond 150 m unless Radar is on.
 - **End:** whoever is IT at the end loses and everyone else wins (counted on the leaderboard). Results show time as IT and tags.
 
-## 1.2 · Smooth roads, better car sound
+## 1.2 · Smooth roads, better car sound · 22 Oct 2026
 
 - **No more jumps at junctions and bends:**
   - Roads now level out smoothly into the round junction pads, so there's no step at their rim.
@@ -45,9 +48,12 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
   - It plays as overlapping random slices from four under-load stretches (about 5.6 s in all), so there's no repeating cycle.
   - Every slice is pitch-corrected, so the revs alone set the pitch.
   - The idle is the clip's coasting stretch.
+  - **Softer and smoother:** a gentle low-pass takes the harsh top end off, opening slightly as the revs rise, and longer 0.5 s slices make the sound flow more evenly.
+  - **Builds up as you pull away:** it starts quiet and swells to full volume by about 55 km/h, with slower fades between idle and driving.
   - Gear-change clunks and pops stay.
+  - A sport-exhaust version (distortion, rasp and overrun crackle) was tried and removed because it sounded harsh.
 
-## 1.1 · Hypercar, menus and joining
+## 1.1 · Hypercar, menus and joining · 22 Oct 2026
 
 - **Hypercar:**
   - A second ride, an original single-seat hypercar: a low carbon body, a bubble canopy, carved fenders, side pods with chrome blades, a tall rear wing on struts, and turbine wheels with sidewall stripes in your colour.
@@ -58,15 +64,19 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
     - The car gets the full version; the bike's is quicker and lighter, like a quickshifter.
   - Its own handling: faster (~210 km/h), quicker off the line, more grip, a little body roll, and no wheelies.
   - Its own cockpit view, with a steering yoke and dash under the canopy.
+  - Model fixes after the first look:
+    - The tail is solid (it was see-through from behind).
+    - The diffuser fins sit on an angled panel under the tail instead of dangling below it.
+    - The tyres are solid 3D tyres with a rounded tread and both sidewalls (they looked hollow).
 - **V opens the vehicle picker**, with a studio render of each ride in your colour. Press 1 or 2, or click.
   - Your choice is remembered, and other players see it on your ghost.
   - You can't switch mid-race.
 - **Tyres sit on the road:** roads are drawn a few cm above the ground they follow, so tyres used to sink in. Now they ride on the surface. The body also lifts where the ground under a tyre rises (dips), and the car's wheels no longer tip with the body when it rolls in corners.
 - **Esc menu** split into General, Graphics, Audio and Controls tabs.
-- **Start menu:** asks for your name first. Invite links join right after the name.
+- **Start menu:** asks for your name first. Invite links join right after the name. This fixes guests joining under the wrong name, or as "Driver".
 - **Joining:** a sturdier handshake, and TURN relay support via `/api/ice` for players on different networks (needs the env vars, see README).
 
-## 1.0 · Day, night and weather
+## 1.0 · Day, night and weather · 22 Oct 2026
 
 **Day cycle**
 - The world runs on a fixed 20-tick-a-second clock, like Minecraft. A full day is 24,000 ticks (20 minutes).
@@ -92,7 +102,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - New setting in the Esc menu, **Weather: Live / Always sunny**. Always sunny applies to your screen only.
 - Rain and snow drop counts follow the graphics preset. Each is a single GPU draw call.
 
-## 0.9 · YouTube radio
+## 0.9 · YouTube radio · 22 Oct 2026
 
 **Radio (Q)**
 - Songs now come from YouTube: search for any song and play it, free and with no sign-in.
@@ -106,7 +116,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 **Deploys:** the Vercel project is now connected to GitHub. Pull requests get preview links, and merging into `main` goes live.
 
-## 0.8 · Wheelies and smoother cornering
+## 0.8 · Wheelies and smoother cornering · 22 Oct 2026
 
 **Wheelies**
 - Hold Shift (gamepad: X) above 40 km/h to lift the front wheel.
@@ -123,7 +133,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 **Fixed:** a hit before audio was unlocked could abort a frame.
 
-## 0.7 · Barriers, sound, radio and launch
+## 0.7 · Barriers, sound, radio and launch · 21 Oct 2026
 
 **Launch**
 - Deployed to Vercel at [cruiseway.vercel.app](https://cruiseway.vercel.app). It's a static site, and multiplayer runs peer-to-peer, so there's no game server.
@@ -146,7 +156,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - Recently played, trending suggestions with genre chips, and a now-playing mini player (play/pause, next, volume).
 - The zen music fades out while the radio plays.
 
-## 0.6 · Laptop performance, CruiseWay name, tidy codebase
+## 0.6 · Laptop performance, CruiseWay name, tidy codebase · 21 Oct 2026
 
 **Performance:** on an Intel integrated GPU, with the same scene:
 - triangles drawn per frame: 951k → 405k
@@ -163,7 +173,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - Renamed from "Convoy" to **CruiseWay** everywhere.
 - Source reorganised into folders by purpose (`core/`, `network/`, `vehicle/`, `race/`, `ui/`, `audio/`, `radio/`, `world/generation/`, `world/rendering/`), with a folder guide in the README.
 
-## 0.5 · Concept bike and cockpit dashboard
+## 0.5 · Concept bike and cockpit dashboard · 21 Oct 2026
 
 - A new hubless concept superbike:
   - glowing translucent tyres on open rims
@@ -172,7 +182,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - Cockpit view from the saddle, with a live digital speedometer on the steering head.
 - The race lobby always runs its full 15 seconds; any member can press Start now.
 
-## 0.4 · Smoother riding and race guidance
+## 0.4 · Smoother riding and race guidance · 21 Oct 2026
 
 **Smoothness**
 - The bike is drawn smoothly between physics updates.
@@ -184,7 +194,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - The route on the map shrinks behind you as you ride it.
 - TURN AROUND warning when riding the wrong way on a race route, or away from your GPS route.
 
-## 0.3 · The island
+## 0.3 · The island · 21 Oct 2026
 
 **World**
 - A finite island of about 8×8 km, with a coastline, sea and lakes.
@@ -205,7 +215,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 **Fixed:** the bike no longer sinks into the road on climbs.
 
-## 0.2 · Golden-hour hills
+## 0.2 · Golden-hour hills · 21 Oct 2026
 
 - One landscape, rebuilt for looks:
   - smooth rolling hills, with a road that runs along the hillsides
@@ -214,7 +224,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - Terrain builds in a background worker with distance-based detail, so hills reach about 2 km out without stuttering.
 - A sport bike with leaning and suspension. Tree trunks are solid.
 
-## 0.1 · First playable
+## 0.1 · First playable · 21 Oct 2026
 
 - An endless procedural road and world, generated from a seed so every player sees the same place.
 - Ghost multiplayer for up to 6 players: share a 5-letter world code, ride together as see-through bikes with name tags.
