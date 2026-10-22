@@ -155,12 +155,13 @@ export class SoundManager {
     if (!this.samples || this.voices) return;
     const ctx = this.ctx;
     this.rideGain = gain(ctx, 0, this.fx);
+    this.exhaust = makeExhaust(ctx, this.rideGain);
     this.voices = {};
     for (const surface of Object.keys(SAMPLES)) {
       for (const band of BANDS) {
         if (SAMPLES[surface].grains) {
           const s = this.samples[surface][band];
-          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.region, s.pitch, this.rideGain);
+          this.voices[surface + band] = new GrainVoice(ctx, s.buffer, s.region, s.pitch, this.exhaust.input);
           continue;
         }
         const g = gain(ctx, 0, this.rideGain);
@@ -240,6 +241,34 @@ export class SoundManager {
     // ignition cut makes the engine drop out for a moment
     if (shifting) this.rideGain.gain.setTargetAtTime(0.2, t, 0.012);
     else this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+    if (car) this.carExhaust(t, dt, rpm, throttle, b.throttle, E);
+    this.lastThrottle = b.throttle;
+  }
+
+  // The hypercar's sport exhaust. A valve opens when you're hard on the
+  // throttle high in the revs (louder, raspier, brighter, like a valved
+  // Cayman S letting go); at low revs it stays muffled. Lifting off at high
+  // revs sets off a second or so of overrun pops and burble that fades out.
+  carExhaust(t, dt, rpm, throttle, pedal, E) {
+    const x = this.exhaust;
+    const r = clamp01((rpm - E.idle) / (E.max - E.idle));
+    const open = pedal > 0.55 && rpm > 3800 ? 1 : 0;
+    this.valve = (this.valve ?? 0) + (open - (this.valve ?? 0)) * (1 - Math.exp(-dt * (open ? 6 : 3)));
+    const v = this.valve;
+    x.drive.gain.setTargetAtTime(1 + v * 1.8 + r * 0.6, t, 0.05);
+    x.tone.frequency.setTargetAtTime(1500 + v * 7000 + r * 1500, t, 0.05);
+    x.rasp.gain.setTargetAtTime(1 + v * 4.5, t, 0.08);
+    x.out.gain.setTargetAtTime((0.85 + v * 0.6) / (1 + v * 0.9 + r * 0.3), t, 0.05);
+    // overrun: off the throttle from high revs
+    if ((this.lastThrottle ?? 0) > 0.5 && pedal < 0.1 && rpm > 3500) {
+      this.crackleFrom = t;
+      this.crackleFor = 0.7 + clamp01((rpm - 3500) / 3500) * 0.9;
+    }
+    const age = t - (this.crackleFrom ?? -9);
+    if (age < (this.crackleFor ?? 0) && pedal < 0.1) {
+      const fade = 1 - age / this.crackleFor;
+      if (Math.random() < dt * (4 + 14 * fade)) this.pop(t + Math.random() * 0.03, (0.06 + Math.random() * 0.16) * fade);
+    }
   }
 
   // A gear change you can hear: the gearbox clunks, and when you shift high
@@ -385,6 +414,28 @@ function noise(ctx, buffer, to) {
   const s = ctx.createBufferSource(); s.buffer = buffer; s.loop = true; s.connect(to);
   s.start(ctx.currentTime, Math.random() * buffer.duration); return s;
 }
+// The car's exhaust chain: drive -> soft clipper (harmonics, rasp) -> low
+// shelf (boom) -> rasp peak -> tone low-pass (the "valve") -> out. Its knobs
+// are moved by SoundManager.carExhaust().
+function makeExhaust(ctx, to) {
+  const input = ctx.createGain();
+  const drive = ctx.createGain();
+  const clip = ctx.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); }
+  clip.curve = curve;
+  clip.oversample = '2x';
+  const boom = ctx.createBiquadFilter();
+  boom.type = 'lowshelf'; boom.frequency.value = 150; boom.gain.value = 5;
+  const raspPeak = ctx.createBiquadFilter();
+  raspPeak.type = 'peaking'; raspPeak.frequency.value = 2300; raspPeak.Q.value = 0.9; raspPeak.gain.value = 1;
+  const tone = ctx.createBiquadFilter();
+  tone.type = 'lowpass'; tone.frequency.value = 1500; tone.Q.value = 0.5;
+  const out = gain(ctx, 0.85, to);
+  input.connect(drive).connect(clip).connect(boom).connect(raspPeak).connect(tone).connect(out);
+  return { input, drive, tone, rasp: raspPeak, out };
+}
+
 // An engine voice that never loops: it keeps playing short overlapping
 // slices of a recording, each from a random point in its section, with
 // equal-power crossfades. Engine sound has no melody, so the stitched result

@@ -13,6 +13,10 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - **Car engine without the loop:**
   - The hypercar's engine now plays overlapping random slices from 8 s of cruise and 3.9 s of full throttle, instead of a 2–3 s loop, so there's no repeating cycle.
   - Slices from the rising full-throttle pull are pitch-corrected, so the game's revs set the pitch.
+- **Sport exhaust for the hypercar** (inspired by Cayman S exhaust clips):
+  - A valve opens when you floor it above ~3,800 rpm: louder, raspier and brighter. At low revs and part throttle it stays muffled.
+  - A deeper exhaust boom.
+  - Lifting off from high revs sets off about a second of fading overrun pops and burble.
 
 ## 1.1 · Hypercar, menus and joining
 
