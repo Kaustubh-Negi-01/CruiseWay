@@ -7,7 +7,7 @@ import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
 import { VEHICLES } from './vehicle/vehicles.js';
-import { IS_MOBILE, setupMobile, keepAwake } from './mobile/mobile.js';
+import { IS_MOBILE, setupMobile, keepAwake, Tilt, TILT_SENS } from './mobile/mobile.js';
 import { TouchControls } from './mobile/touchControls.js';
 
 const $ = (s) => document.querySelector(s);
@@ -155,7 +155,8 @@ function enterGame({ net, seed, code, welcome }) {
   if (!IS_MOBILE) ui.toast('Press Q for the radio.');
   setupBigMap();
   if (IS_MOBILE) {
-    new TouchControls($('#hud'), input, game);
+    touchControls = new TouchControls($('#hud'), input, game);
+    touchControls.setTilt(tilt.on);
     document.body.classList.add('riding');
     keepAwake(true);   // don't let the screen dim mid-ride
   } else input.attachTouch($('#hud'));
@@ -333,6 +334,45 @@ for (const key of ['master', 'music', 'effects']) {
   const el = $('#vol-' + key);
   el.value = Math.round(soundPrefs[key] * 100);
   el.addEventListener('input', () => saveSound({ [key]: el.value / 100 }));
+}
+
+// phones: steer by dragging, or by tilting the phone like a wheel
+let touchControls = null;
+const tilt = new Tilt((v) => { input.touch.tilt = v; });
+const steerHints = {
+  touch: 'Put your thumb on the left side and slide it left or right.',
+  tilt: 'Hold the phone sideways and turn it like a steering wheel. Touching the left side still steers too.',
+};
+function showSteering(mode) {
+  $('#tiltSensRow').classList.toggle('hidden', mode !== 'tilt');
+  $('#steerHint').textContent = steerHints[mode];
+  touchControls?.setTilt(mode === 'tilt');
+}
+async function setSteering(mode) {
+  if (mode === 'tilt') {
+    const ok = await tilt.enable();
+    if (!ok) {
+      ui.toast('Tilt steering needs motion access. Allow it in your browser, or keep Drag.');
+      steeringChips.set('touch');
+      mode = 'touch';
+    }
+  } else tilt.disable();
+  store.set('steering', mode);
+  showSteering(mode);
+}
+const steeringPref = store.get('steering') === 'tilt' ? 'tilt' : 'touch';
+const steeringChips = chips($('[data-opt=steering]'), { touch: 'Drag', tilt: 'Tilt' }, steeringPref, (v) => setSteering(v));
+const sensPref = TILT_SENS[store.get('tiltSens')] ? store.get('tiltSens') : 'medium';
+tilt.full = TILT_SENS[sensPref];
+chips($('[data-opt=tiltSens]'), { low: 'Low', medium: 'Medium', high: 'High' }, sensPref, (v) => { tilt.full = TILT_SENS[v]; store.set('tiltSens', v); });
+showSteering(steeringPref);
+// iOS only grants motion access inside a tap, so a saved Tilt choice
+// switches on at the first tap of the session
+if (IS_MOBILE && steeringPref === 'tilt') {
+  addEventListener('pointerup', function first() {
+    removeEventListener('pointerup', first, true);
+    setSteering('tilt');
+  }, true);
 }
 
 // weather: the shared forecast, or always sunny on this device

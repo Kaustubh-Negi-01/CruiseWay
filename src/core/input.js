@@ -7,7 +7,7 @@
 export class Input {
   constructor() {
     this.keys = new Set();
-    this.touch = { steer: 0, throttle: 0, brake: 0, handbrake: 0, wheelie: 0 };
+    this.touch = { steer: 0, throttle: 0, brake: 0, handbrake: 0, wheelie: 0, tilt: 0, dragging: false };
     this.handlers = {}; // one-shot actions: reset, camera, map, players
     this.enabled = true;
     this.padPrev = {};
@@ -48,7 +48,8 @@ export class Input {
       handbrake = k.has('Space');
       wheelie = k.has('ShiftLeft') || k.has('ShiftRight');
 
-      steer += this.touch.steer;
+      // a thumb on the steering area overrides tilt
+      steer += this.touch.dragging ? this.touch.steer : this.touch.tilt;
       throttle = Math.max(throttle, this.touch.throttle);
       brake = Math.max(brake, this.touch.brake);
       handbrake = handbrake || !!this.touch.handbrake;

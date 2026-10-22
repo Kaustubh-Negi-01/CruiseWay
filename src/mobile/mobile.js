@@ -56,3 +56,76 @@ export function setupMobile() {
     if (!document.hidden && document.body.classList.contains('riding')) keepAwake(true);
   });
 }
+
+// Tilt-to-steer: hold the phone sideways like a steering wheel and turn it.
+//
+// Phones disagree on motion axes (iOS reports the gravity vector with the
+// opposite sign to Android), so this doesn't trust them. It projects the
+// gravity reading onto the screen's own left-right / up-down axes, then
+// learns which way is "up" from the first readings while the phone is held
+// sideways. After that, turning the phone clockwise is always a right turn,
+// on any phone, whichever way round it's held.
+export const TILT_SENS = { low: 40, medium: 28, high: 18 };   // degrees of turn for full lock
+
+export class Tilt {
+  constructor(onChange) {
+    this.value = 0;          // -1..1, positive = left (like the A key)
+    this.on = false;
+    this.sign = 0;           // learned: +1 / -1 (0 = not yet)
+    this.full = TILT_SENS.medium;
+    this.onChange = onChange;
+    this.handler = (e) => this.read(e);
+    this.relearn = () => { this.sign = 0; };
+  }
+
+  // Must run inside a tap: iOS asks the player for permission.
+  async enable() {
+    try {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        if ((await DeviceMotionEvent.requestPermission()) !== 'granted') return false;
+      }
+    } catch { return false; }
+    if (typeof DeviceMotionEvent === 'undefined') return false;
+    this.on = true;
+    this.sign = 0;
+    addEventListener('devicemotion', this.handler);
+    screen.orientation?.addEventListener?.('change', this.relearn);
+    addEventListener('orientationchange', this.relearn);
+    return true;
+  }
+
+  disable() {
+    this.on = false;
+    removeEventListener('devicemotion', this.handler);
+    screen.orientation?.removeEventListener?.('change', this.relearn);
+    removeEventListener('orientationchange', this.relearn);
+    this.value = 0;
+    this.onChange?.(0);
+  }
+
+  read(e) {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    // device axes -> screen axes (x right, y up) for the current rotation
+    const angle = ((screen.orientation?.angle ?? window.orientation ?? 0) % 360 + 360) % 360;
+    let sx, sy;
+    if (angle === 90) { sx = -g.y; sy = g.x; }
+    else if (angle === 270) { sx = g.y; sy = -g.x; }
+    else if (angle === 180) { sx = -g.x; sy = -g.y; }
+    else { sx = g.x; sy = g.y; }
+    // phone lying flat: no steering information
+    if (Math.hypot(sx, sy) < 2.5) return;
+    // learn which way is "up" while the phone is held roughly level
+    if (!this.sign) {
+      if (Math.abs(sy) < 4 || Math.abs(sx) > Math.abs(sy)) return;
+      this.sign = Math.sign(sy);
+    }
+    const ux = sx * this.sign, uy = sy * this.sign;     // world "up", seen on screen
+    const turn = Math.atan2(-ux, uy) * 180 / Math.PI;   // + = phone turned clockwise (right)
+    const dead = 2;
+    const t = Math.abs(turn) < dead ? 0 : turn - Math.sign(turn) * dead;
+    const target = Math.max(-1, Math.min(1, -t / this.full));
+    this.value += (target - this.value) * 0.5;           // a little smoothing
+    this.onChange?.(this.value);
+  }
+}

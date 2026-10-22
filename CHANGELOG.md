@@ -4,6 +4,14 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 0.1–0.7 were built on 21 October 2026, and 0.8–1.4 on 22 October 2026.
 
+## 1.5 · Tilt steering · 22 Oct 2026
+
+- **Tilt to steer on phones:** hold the phone sideways and turn it like a steering wheel. Switch it on in Esc > General > Steering: Tilt.
+- **Sensitivity:** Low, Medium or High (40°, 28° or 18° of turn for full lock), with a small dead zone and light smoothing.
+- **Works the same on iPhone and Android:** the game reads gravity across the screen and learns which way is up for that phone, so turning clockwise always steers right, whichever way round the phone is held. It re-learns when you rotate the phone.
+- **Thumb still works:** dragging on the left side takes over while your thumb is down.
+- **Permission:** iPhone asks for motion access the first time. If it's refused, a message explains and steering stays on Drag. A saved Tilt choice switches back on at your first tap of the next visit.
+
 ## 1.4 · Phones and joining from any network · 22 Oct 2026
 
 - **Landscape + full screen:**

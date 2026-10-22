@@ -177,6 +177,11 @@
       <section class="pane" data-pane="general">
         <div class="opt"><span>Weather</span><div class="chips" data-opt="weather"></div></div>
         <p class="hint">Live follows the world's shared forecast. Always sunny only changes your screen.</p>
+        <div class="mobile-only">
+          <div class="opt"><span>Steering</span><div class="chips" data-opt="steering"></div></div>
+          <div class="opt" id="tiltSensRow"><span>Tilt sensitivity</span><div class="chips" data-opt="tiltSens"></div></div>
+          <p class="hint" id="steerHint"></p>
+        </div>
       </section>
       <section class="pane hidden" data-pane="graphics">
         <div class="opt"><span>Graphics</span><div class="chips" data-opt="quality"></div></div>
@@ -194,7 +199,7 @@
       </section>
       <section class="pane hidden" data-pane="controls">
         <ul class="keys mobile-only">
-          <li><b>Left side</b> — put your thumb down and slide left / right to steer</li>
+          <li><b>Left side</b> — put your thumb down and slide left / right to steer (or turn on <b>Tilt</b> in General and turn the phone like a wheel)</li>
           <li><b>GAS</b> / <b>BRAKE</b> (hold brake to reverse) · <b>DRIFT</b> rear-brake slide</li>
           <li><b>WHEELIE</b> (bike, 40+ km/h) · <b>⚡</b> Manhunt power-up when you have one</li>
           <li><b>🎥</b> camera · <b>↺</b> back to the road · <b>⇄</b> vehicle · tap the <b>minimap</b> for the big map</li>

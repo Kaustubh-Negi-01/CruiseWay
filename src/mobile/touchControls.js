@@ -88,6 +88,7 @@ export class TouchControls {
       this.ring.style.left = (e.clientX - r.left) + 'px';
       this.ring.style.top = (e.clientY - r.top) + 'px';
       this.zone.classList.add('active');
+      this.input.touch.dragging = true;
       set(0);
     });
     this.zone.addEventListener('pointermove', (e) => { if (e.pointerId === id) set(e.clientX - x0); });
@@ -95,11 +96,17 @@ export class TouchControls {
       if (e.pointerId !== id) return;
       id = null;
       this.input.touch.steer = 0;
+      this.input.touch.dragging = false;
       this.zone.classList.remove('active');
       this.dot.style.transform = '';
     };
     this.zone.addEventListener('pointerup', end);
     this.zone.addEventListener('pointercancel', end);
+  }
+
+  // the hint under your left thumb says how you're steering
+  setTilt(on) {
+    this.zone.querySelector('.t-hint').textContent = on ? '⟲ tilt to steer ⟳ · or drag' : '◀ drag to steer ▶';
   }
 
   refresh() {

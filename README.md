@@ -67,7 +67,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 - **On phones:**
   - The game plays in landscape and full screen: the first tap anywhere switches to full screen and locks landscape. Holding the phone upright shows a "turn sideways" screen.
   - **Add to Home Screen** installs it as an app that opens straight into full-screen landscape.
-  - **Controls:** drag on the left half to steer (analogue). GAS / BRAKE / DRIFT and WHEELIE sit on the right, a ⚡ button appears for Manhunt power-ups, and pause, camera, reset and vehicle buttons sit along the top.
+  - **Controls:** drag on the left half to steer (analogue), or switch on **Tilt** in Esc > General and turn the phone like a steering wheel (Low / Medium / High sensitivity; a thumb on the left side still takes over). GAS / BRAKE / DRIFT and WHEELIE sit on the right, a ⚡ button appears for Manhunt power-ups, and pause, camera, reset and vehicle buttons sit along the top.
   - **Map:** tap the minimap for the big map. Pinch to zoom, drag to move, tap a spot for its card, and hold for half a second to drop a waypoint.
   - **Extras:** starts on the Low graphics preset, vibrates on hits and tags (Android), and keeps the screen awake while you ride.
   - **Radio:** it stays on PC, because its YouTube player needs a big box on screen. Play music from your phone's own music app instead; it mixes with the game.
