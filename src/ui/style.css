@@ -329,3 +329,15 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 .tabs button:hover { color: #fff; }
 .tabs button.on { background: var(--accent); color: #14110a; }
 #pause .pane { min-height: 190px; }
+
+/* ---------- start menu steps ---------- */
+.btn.wide { flex: 1; }
+.invite { margin: 4px 0 14px; padding: 10px 14px; border-radius: 12px; background: rgba(232,196,74,.12); border: 1px solid rgba(232,196,74,.35); font-size: 14px; }
+.invite b { font: 700 15px ui-monospace, monospace; letter-spacing: .15em; color: var(--accent); }
+.hello { margin: 4px 0 12px; color: var(--muted); font-size: 14px; }
+.hello b { color: #fff; }
+.link { background: none; border: 0; padding: 0 0 0 6px; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.code-row { display: flex; gap: 8px; }
+.code-row .code-input { flex: 1; min-width: 0; }
+.or { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }

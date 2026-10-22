@@ -62,6 +62,8 @@ export class Net {
   }
 
   acceptGuest(conn) {
+    // listen straight away: a guest's first message can beat the 'open' event
+    conn.on('data', (msg) => { if (this.conns.get(conn.peer) === conn) this.emit('message', conn.peer, msg); });
     conn.on('open', () => {
       if (this.conns.size >= MAX_PLAYERS - 1) {
         conn.send({ t: 'full' });
@@ -69,7 +71,6 @@ export class Net {
         return;
       }
       this.conns.set(conn.peer, conn);
-      conn.on('data', (msg) => this.emit('message', conn.peer, msg));
       const gone = () => {
         if (this.conns.delete(conn.peer)) this.emit('leave', conn.peer);
       };

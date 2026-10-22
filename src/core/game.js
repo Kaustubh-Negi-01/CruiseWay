@@ -799,22 +799,29 @@ export class Game {
 
   // ---- host side ----------------------------------------------------------------
 
+  // Everything a guest needs to start: world, roster, clock, any lobby or race.
+  sendWelcome(to) {
+    const hr = this.hostRace;
+    this.net.sendTo(to, {
+      t: 'welcome', you: to, hostId: this.selfId, seed: this.seed,
+      clock: { tick: this.climate.now(), key: this.climate.key2 },
+      roster: this.rosterList(),
+      spawn: { x: this.car.pos.x, z: this.car.pos.z },
+      lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
+      race: hr && hr.phase !== 'lobby' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
+    });
+  }
+
   hostHandle(from, msg) {
     const hr = this.hostRace;
     switch (msg.t) {
       case 'hello': {
+        if (this.players.has(from)) { this.sendWelcome(from); break; }   // a resent hello: just answer again
         const used = new Set([...this.players.values()].map((p) => p.color));
         const color = COLORS.find((c) => !used.has(c)) || COLORS[this.players.size % COLORS.length];
         const name = String(msg.name || 'Rider').slice(0, 16);
         this.players.set(from, { id: from, name, color, wins: 0 });
-        this.net.sendTo(from, {
-          t: 'welcome', you: from, hostId: this.selfId, seed: this.seed,
-          clock: { tick: this.climate.now(), key: this.climate.key2 },
-          roster: this.rosterList(),
-          spawn: { x: this.car.pos.x, z: this.car.pos.z },
-          lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
-          race: hr && hr.phase !== 'lobby' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
-        });
+        this.sendWelcome(from);
         this.sendAll({ t: 'roster', list: this.rosterList() });
         this.sendAll({ t: 'toast', text: `${name} joined the world` });
         break;
