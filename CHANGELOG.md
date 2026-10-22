@@ -4,6 +4,14 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 0.1–0.7 were built on 21 October 2026, and 0.8–1.4 on 22 October 2026.
 
+## 1.5 · Radio search fixed · 22 Oct 2026
+
+- **Radio song search works again.** The public Invidious servers it used have gone offline: the last working one returns errors, and none still allow API searches.
+- **New `/api/search` function:** searches with the official YouTube Data API v3. The key stays on the server (`YOUTUBE_API_KEY` in Vercel), and only embeddable videos are returned, with lengths.
+- **Caching:** every result is cached by Vercel for a day, so the suggestion chips and repeat searches don't use up the free quota (about 100 new searches a day).
+- **Fallbacks:** a browser-side key if one is built in, then Invidious, as a last resort.
+- **Clearer message:** if the key isn't set up yet, the Songs tab says so (instead of "try again"). Live radio is unaffected.
+
 ## 1.4 · Phones and joining from any network · 22 Oct 2026
 
 - **Landscape + full screen:**

@@ -108,10 +108,13 @@ export class RadioPanel {
       this.currentLists = { recent, main: list };
       this.body.innerHTML = `${head}<h3>${title}</h3>` + (list.length ? this.listHTML(list, 'main') : '<div class="radio-status">Nothing found. Try another search.</div>');
       this.bind();
-    } catch {
+    } catch (e) {
       if (id !== this.reqId) return;
       this.currentLists = { recent, main: [] };
-      this.body.innerHTML = `${head}<h3>${title}</h3><div class="radio-status err">Couldn't reach the song search right now. Try again in a moment, or use Live radio.</div>`;
+      const why = e?.code === 'not-configured'
+        ? "Song search isn't switched on for this site yet (it needs a YouTube API key in Vercel; see the README). Live radio works meanwhile."
+        : "Couldn't reach the song search right now. Try again in a moment, or use Live radio.";
+      this.body.innerHTML = `${head}<h3>${title}</h3><div class="radio-status err">${why}</div>`;
       this.bind();
     }
   }
