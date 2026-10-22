@@ -11,6 +11,8 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 - **Caching:** every result is cached by Vercel for a day, so the suggestion chips and repeat searches don't use up the free quota (about 100 new searches a day).
 - **Fallbacks:** a browser-side key if one is built in, then Invidious, as a last resort.
 - **Clearer message:** if the key isn't set up yet, the Songs tab says so (instead of "try again"). Live radio is unaffected.
+- **Search is live:** the key is set up on the site.
+- **New tab icon:** a sunset tile with the road heading into the setting sun, matching the home-screen app icon. It's bold enough to read at 16 px in dark tab bars (SVG, plus 32 and 48 px PNG fallbacks).
 
 ## 1.4 · Phones and joining from any network · 22 Oct 2026
 
