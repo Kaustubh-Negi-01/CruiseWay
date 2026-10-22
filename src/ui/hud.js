@@ -1,11 +1,32 @@
 import { MapView } from './map.js';
 import { fmtTime } from '../core/game.js';
 import { DIFFICULTY } from '../world/generation/spots.js';
+import { HUNT, POWERS } from '../modes/manhunt.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
 const km = (m) => (m / 1000).toFixed(1) + ' km';
+
+// The Manhunt bar: your role, time left, zone, and the IT's power-up or the
+// runner's distance from the IT.
+function huntBar(h) {
+  const m = Math.floor(h.left / 60), sec = Math.floor(h.left % 60);
+  const time = `<b>${m}:${String(sec).padStart(2, '0')}</b>`;
+  if (!h.participant) return `<span>Manhunt at <strong>${esc(h.spot.name)}</strong> · ${esc(h.itName)} is IT</span>${time}`;
+  const role = h.isIt ? '<em class="role it">YOU\'RE IT</em>' : '<em class="role run">RUNNER</em>';
+  const zone = `<span>Zone <strong>${Math.round(h.radius * 2)} m</strong></span>`;
+  let extra = '';
+  if (h.isIt) {
+    if (h.frozen > 0) extra = `<span>Go in <strong>${Math.ceil(h.frozen)}s</strong></span>`;
+    else if (h.power) extra = `<span class="power">${h.power.icon} <strong>${h.power.label}</strong> · press E</span>`;
+    else extra = '<span>Power-up <strong>charging</strong></span>';
+  } else {
+    extra = h.dIt != null ? `<span>IT (${esc(h.itName)}) <strong>${Math.round(h.dIt)} m</strong></span>` : `<span>IT: <strong>${esc(h.itName)}</strong></span>`;
+  }
+  const fx = h.active.map(([k, t]) => `<span class="fx ${k}">${k} ${t.toFixed(0)}s</span>`).join('');
+  return role + time + zone + extra + fx;
+}
 
 // Row of single-select chips. Returns { get, set }.
 export function chips(el, options, value, onChange) {
@@ -33,6 +54,7 @@ function setText(sel, v) {
 }
 
 export function diffChip(spot) {
+  if (spot.mode === 'hunt') return '<span class="chip diff hunt">◎ Manhunt</span>';
   const d = DIFFICULTY[spot.difficulty];
   return `<span class="chip diff" style="background:${d.color}">${stars(spot.difficulty)} ${d.label}</span>`;
 }
@@ -77,9 +99,10 @@ export class UI {
     }
     const mapState = {
       me: s.me, yaw: s.yaw, others: s.others, gps: s.nav?.gps, waypoint: s.nav && !s.nav.spot ? s.nav : null,
-      race: s.race?.participant ? s.race.spot : null,
+      race: s.race?.participant && !s.hunt ? s.race.spot : null,
       raceFrom: s.race?.participant ? s.race.progressS : 0,
       raceNext: s.race?.participant ? s.race.next : 0,
+      zone: s.hunt?.participant ? s.hunt.zone : null,
     };
     if (this.minimap && this.hudTick % 4 === 0) this.minimap.draw(mapState);
     if (this.bigMap && !$('#mapOverlay').classList.contains('hidden') && this.hudTick % 2 === 0) {
@@ -103,13 +126,26 @@ export class UI {
     if (s.lobby) {
       const left = Math.max(0, Math.ceil((s.lobby.endsAt - performance.now()) / 1000));
       const n = s.lobby.members.length;
-      $('#lobbyText').innerHTML = this.lobbyMember
-        ? `🏁 <b>${esc(s.lobby.spotObj.name)}</b> · race starts in <b>${left}s</b> · ${n} rider${n === 1 ? '' : 's'} ready`
-        : `<b>${esc(s.lobby.spotObj.name)}</b> · ${n} ready · starts in ${left}s · ride over to join`;
+      if (s.lobby.mode === 'hunt') {
+        const short = Math.max(0, s.lobby.need - n);
+        $('#lobbyText').innerHTML = `◎ <b>Manhunt</b> at <b>${esc(s.lobby.spotObj.name)}</b> · ${s.lobby.minutes} min · ${n} rider${n === 1 ? '' : 's'}`
+          + (short ? ` · waiting for <b>${short}</b> more` : ` · starts in <b>${left}s</b>`) + (this.lobbyMember ? '' : ' · ride over to join');
+      } else {
+        $('#lobbyText').innerHTML = this.lobbyMember
+          ? `🏁 <b>${esc(s.lobby.spotObj.name)}</b> · race starts in <b>${left}s</b> · ${n} rider${n === 1 ? '' : 's'} ready`
+          : `<b>${esc(s.lobby.spotObj.name)}</b> · ${n} ready · starts in ${left}s · ride over to join`;
+      }
     }
 
     const bar = $('#raceBar');
     const r = s.race;
+    if (s.hunt) {
+      bar.classList.remove('hidden');
+      if (this.hudTick % 3 === 0) bar.innerHTML = huntBar(s.hunt);
+      bar.classList.toggle('hunt-it', s.hunt.participant && s.hunt.isIt);
+      return;
+    }
+    bar.classList.remove('hunt-it');
     if (r && r.participant) {
       bar.classList.remove('hidden');
       const total = r.spot.checkpoints.length;
@@ -129,8 +165,13 @@ export class UI {
 
   spotPrompt(spot, best, busy, cb) {
     const el = $('#spotPrompt');
+    const hunt = spot.mode === 'hunt';
+    $('#spKicker').textContent = hunt ? 'READY FOR MANHUNT?' : 'READY TO RACE?';
+    $('#spYes').textContent = hunt ? 'Join' : 'Race';
     $('#spName').textContent = spot.name;
-    $('#spMeta').innerHTML = `${diffChip(spot)}<span class="chip">${km(spot.length)}</span>`
+    $('#spMeta').innerHTML = hunt
+      ? `${diffChip(spot)}<span class="chip">${HUNT.minPlayers}+ riders</span><span class="chip">tag with vehicles</span><span class="chip">shrinking zone</span>`
+      : `${diffChip(spot)}<span class="chip">${km(spot.length)}</span>`
       + `<span class="chip">${Math.round(spot.dirtFrac * 100)}% dirt</span>`
       + `<span class="chip">${Math.round(spot.climb)} m climb</span>`
       + (best != null ? `<span class="chip">best ${fmtTime(best)}</span>` : '');
@@ -155,9 +196,14 @@ export class UI {
 
   closeSpotPrompt() { $('#spotPrompt').classList.add('hidden'); }
 
-  lobby(lobby, member, names, onGo) {
+  lobby(lobby, member, names, onGo, onMinutes) {
     const bar = $('#lobbyBar');
+    const opts = $('#lobbyOpts');
     if (!lobby) { bar.classList.add('hidden'); return; }
+    opts.classList.toggle('hidden', !(lobby.mode === 'hunt' && onMinutes));
+    if (lobby.mode === 'hunt' && onMinutes) {
+      chips(opts, Object.fromEntries(HUNT.minutes.map((m) => [m, m + ' min'])), String(lobby.minutes), (m) => onMinutes(Number(m)));
+    }
     bar.classList.remove('hidden');
     bar.classList.toggle('member', member);
     this.lobbyMember = member;
@@ -170,6 +216,18 @@ export class UI {
     this.selectedSpot = spot;
     const el = $('#spotCard');
     if (!spot) { el.classList.add('hidden'); return; }
+    if (spot.mode === 'hunt') {
+      el.innerHTML = `
+        <div class="sp-kicker">MANHUNT ARENA</div>
+        <h3>${esc(spot.name)}</h3>
+        <p class="hint">Tag with vehicles for ${HUNT.minPlayers}+ riders. One rider is IT; touch someone to pass it on.
+        Whoever is IT when time runs out loses. The zone shrinks as the round goes on, and the IT gets a power-up every 15-20 s (E).</p>
+        <div class="row"><button class="btn small" id="cardClose">Close</button><button class="btn small primary" id="cardRoute">Set route</button></div>`;
+      el.classList.remove('hidden');
+      $('#cardClose').onclick = () => this.showSpotCard(null);
+      $('#cardRoute').onclick = () => onRoute(spot);
+      return;
+    }
     const d = DIFFICULTY[spot.difficulty];
     const pct = (v) => `<div class="bar"><i style="width:${Math.round(Math.min(1, v) * 100)}%;background:${d.color}"></i></div>`;
     el.innerHTML = `
@@ -282,6 +340,17 @@ export class UI {
     el.innerHTML = list.map((s, i) => `<div class="${s.me ? 'me' : ''}"><span>${i + 1}.</span>
       <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}</span>
       <span class="t">${s.time != null ? fmtTime(s.time) : s.left ? 'left' : `${s.cp}/${total}`}</span></div>`).join('');
+  }
+
+  huntResults(spot, rows, won) {
+    $('#resultsTitle').textContent = won ? '🏆 You got away!' : '🎯 You were IT at the end';
+    $('#resultsSub').textContent = `Manhunt · ${spot.name}`;
+    const secs = (ms) => `${Math.floor(ms / 60000)}:${String(Math.round(ms / 1000) % 60).padStart(2, '0')}`;
+    $('#resultsList').innerHTML = rows.map((s) => `<li class="${s.lost ? 'lost' : ''}"><span class="pos">${s.lost ? '✗' : '✓'}</span>
+      <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}${s.me ? ' (you)' : ''}${s.left ? ' · left' : ''}</span>
+      <span class="t">IT ${secs(s.itMs)} · ${s.tags} tag${s.tags === 1 ? '' : 's'}</span></li>`).join('');
+    $('#results').classList.remove('hidden');
+    $('#resultsOk').onclick = () => $('#results').classList.add('hidden');
   }
 
   results(spot, list, iWon, solo) {

@@ -31,6 +31,13 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - **Hubless superbike:** leans into corners and pulls wheelies.
   - **Hypercar:** an original single-seater with a bubble canopy and a tall rear wing. It's faster and grippier, with no wheelies.
   - Switch any time outside a race. Your pick is remembered, and other players see your vehicle.
+- **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots).
+  - **Lobby:** ride up and join. The host picks the round length (3, 5 or 8 min). It starts once at least 3 riders are in.
+  - **Tagging:** one random rider is IT and gets a 5 s pause so the others can scatter. Touch a runner to pass IT on. The new IT waits 2 s and can't tag the person who tagged them for 3 s.
+  - **The zone:** play is inside a holographic ring about 1 km across. It starts shrinking after 20 s and ends around 220 m.
+  - **Power-ups:** the IT gets one every 15-20 s, used with **E**. Nitro is a 4 s speed burst, Radar reveals every runner for 6 s, and Shockwave slows runners within 60 m for 3 s.
+  - **Seeing each other:** runners see a red beacon over the IT, and the screen edge glows red when the IT is within 70 m. The IT's minimap only shows runners within 150 m, unless Radar is on.
+  - **Winning:** whoever is IT when time runs out loses, and everyone else wins. Results show each rider's time as IT and tags made.
 - **Map and GPS.**
   - Press <kbd>M</kbd> for a satellite-style map of the island.
   - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time.
@@ -64,6 +71,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | R | Reset to road (in a race: last checkpoint) |
 | C | Cycle camera |
 | V | Choose your vehicle: superbike or hypercar |
+| E | Manhunt: use the IT's power-up |
 | M | Map |
 | Q | Radio |
 | Enter / Backspace | Accept / dismiss a race prompt |
@@ -154,6 +162,10 @@ src/
     physics.js             riding physics: grip, lean, suspension, collisions
     car.js                 the hypercar model and its tuning
     vehicles.js            the list of rides for the V menu
+
+  modes/
+    manhunt.js             Manhunt: rules, tags, power-ups, zone, results (host + players)
+    arena.js               the shrinking holographic zone wall
 
   race/
     markers.js             start / checkpoint / finish gates and beacon

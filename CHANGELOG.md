@@ -2,6 +2,20 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
+## 1.3 · Manhunt
+
+- **New mode, Manhunt:** tag with vehicles for 3+ riders. The 1-2 star race spots are now purple Manhunt arenas.
+- **Lobby:** the host chooses 3, 5 or 8 minutes. The lobby waits until 3 riders are in.
+- **Start:** one random rider is IT and gets a 5 s pause while the runners scatter. The IT starts in the middle; runners start 170-260 m out.
+- **Tagging:** touch a runner to pass IT on. The host checks each tag (swept, so fast passes count). The new IT waits 2 s, and there are no tag-backs for 3 s.
+- **Shrinking zone:** a holographic ring about 1 km across that follows the ground. It closes after 20 s to about 220 m by 90% of the round, and it's shown on the map.
+- **Power-ups for the IT** every 15-20 s, used with E: Nitro (4 s burst), Radar (see every runner for 6 s) and Shockwave (slows runners within 60 m).
+- **Seeing each other:**
+  - The IT has a red beacon and a red ring on the map.
+  - Runners see the distance to the IT and a red edge glow when it's within 70 m.
+  - The IT's minimap hides runners beyond 150 m unless Radar is on.
+- **End:** whoever is IT at the end loses and everyone else wins (counted on the leaderboard). Results show time as IT and tags.
+
 ## 1.2 · Smooth roads, better car sound
 
 - **No more jumps at junctions and bends:**

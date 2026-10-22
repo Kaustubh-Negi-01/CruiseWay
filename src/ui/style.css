@@ -356,3 +356,20 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 #garage .card { width: min(760px, 100%); }
 .garage-list { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
 .garage-item .g-img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; margin-bottom: 12px; background: #14171c; }
+
+/* ---------- Manhunt ---------- */
+.chip.diff.hunt { background: #b35cff; }
+#lobbyOpts { display: inline-flex; margin-left: 10px; }
+#lobbyOpts button { padding: 4px 10px; font-size: 12px; }
+#raceBar .role { font-style: normal; font: 800 13px system-ui; letter-spacing: .12em; padding: 4px 10px; border-radius: 8px; }
+#raceBar .role.it { background: #ff2b4a; color: #fff; }
+#raceBar .role.run { background: #2b8cff; color: #fff; }
+#raceBar.hunt-it { border-color: rgba(255,43,74,.7); box-shadow: 0 0 24px rgba(255,43,74,.35); }
+#raceBar .power strong { color: #ffd84a; }
+#raceBar .fx { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,.12); color: #fff; text-transform: uppercase; letter-spacing: .06em; }
+#raceBar .fx.slowed { background: rgba(255,140,40,.35); }
+#huntDanger { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+  box-shadow: inset 0 0 120px 30px rgba(255,30,60,.55); animation: huntPulse 0.9s ease-in-out infinite; }
+body.hunt-danger #huntDanger { opacity: 1; }
+@keyframes huntPulse { 50% { box-shadow: inset 0 0 70px 14px rgba(255,30,60,.35); } }
+.results li.lost { color: #ff8a8a; }
