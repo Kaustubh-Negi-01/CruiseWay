@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#0e1014" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CruiseWay" />
+  <link rel="apple-touch-icon" href="/icon-180.png" />
   <title>CruiseWay</title>
   <meta name="description" content="An endless, relaxing open-road drive — with your friends. Share a world code, cruise together as ghosts, and race when the host calls it." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M10 60 L28 4 h8 L54 60z' fill='%233b3d41'/><path d='M31 10h2v8h-2zM31 26h2v10h-2zM30.5 44h3v12h-3z' fill='%23e8c44a'/></svg>" />
@@ -58,7 +65,8 @@
 
       <p id="status" class="status"></p>
     </div>
-    <p class="foot">WASD / arrows to ride · Space rear brake · R reset · C camera · V vehicle · M map · Esc menu</p>
+    <p class="foot desk-only">WASD / arrows to ride · Space rear brake · R reset · C camera · V vehicle · M map · Esc menu</p>
+    <p class="foot mobile-only">Tap anywhere for full screen · add to your home screen for the full app</p>
   </div>
 
   <!-- ===== In-game HUD ===== -->
@@ -130,12 +138,14 @@
     <canvas id="bigMap"></canvas>
     <div class="map-top">
       <h2>Map</h2>
-      <span>Click a <b>race spot</b> for details · click anywhere to drop a waypoint · drag / scroll · <kbd>M</kbd> to close</span>
+      <span class="desk-only">Click a <b>race spot</b> for details · click anywhere to drop a waypoint · drag / scroll · <kbd>M</kbd> to close</span>
+      <span class="mobile-only">Tap a spot for details · <b>hold</b> anywhere to drop a waypoint · drag to move · pinch to zoom</span>
     </div>
     <div class="map-legend">
       <span><i class="lg paved"></i>Road</span><span><i class="lg dirt"></i>Dirt road</span><span><i class="lg gps"></i>Your route</span>
       <button class="btn small" id="clearRoute">Clear route</button>
       <button class="btn small" id="centerMe">Centre on me</button>
+      <button class="btn small" id="mapClose">Close map</button>
     </div>
     <div id="spotCard" class="hidden"></div>
   </div>
@@ -183,7 +193,13 @@
         <label class="slider"><span>Effects volume</span><input type="range" id="vol-effects" min="0" max="100" /></label>
       </section>
       <section class="pane hidden" data-pane="controls">
-        <ul class="keys">
+        <ul class="keys mobile-only">
+          <li><b>Left side</b> — put your thumb down and slide left / right to steer</li>
+          <li><b>GAS</b> / <b>BRAKE</b> (hold brake to reverse) · <b>DRIFT</b> rear-brake slide</li>
+          <li><b>WHEELIE</b> (bike, 40+ km/h) · <b>⚡</b> Manhunt power-up when you have one</li>
+          <li><b>🎥</b> camera · <b>↺</b> back to the road · <b>⇄</b> vehicle · tap the <b>minimap</b> for the big map</li>
+        </ul>
+        <ul class="keys desk-only">
           <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — ride</li>
           <li><kbd>Space</kbd> — rear brake (slide)</li>
           <li><kbd>Shift</kbd> (hold, 40+ km/h) — wheelie: watch the bar, steering gets twitchy</li>
@@ -210,6 +226,11 @@
       <h2>Choose your ride <small>(V or Esc to close)</small></h2>
       <div id="garageList" class="garage-list"></div>
     </div>
+  </div>
+
+  <div id="rotate">
+    <div class="rot-phone"></div>
+    <p>Turn your phone sideways to ride</p>
   </div>
 
   <div id="fatal" class="modal hidden">

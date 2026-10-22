@@ -10,6 +10,7 @@ import { vehicleFor } from '../vehicle/vehicles.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { Manhunt, HUNT } from '../modes/manhunt.js';
+import { buzz } from '../mobile/mobile.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
@@ -122,6 +123,7 @@ export class Game {
       if (kind === 'land') this.sound?.land(v);
       else if (kind === 'tree') this.sound?.treeHit(v);
       else if (kind === 'wall') this.sound?.wallHit(v);
+      buzz(Math.min(60, 15 + v * 4));   // phones: feel the hit
     };
     this.model = null;
     this.setModel(color);
@@ -1261,6 +1263,7 @@ export class Game {
       this.markers.setTarget(r.next + 1);
       this.ui.flash('Checkpoint ' + r.next + '/' + cps.length);
       this.sound?.checkpoint();
+      buzz(20);
       this.toHost({ t: 'race_cp', id: r.id, i: r.next });
       return;
     }

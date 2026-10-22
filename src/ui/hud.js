@@ -19,7 +19,7 @@ function huntBar(h) {
   let extra = '';
   if (h.isIt) {
     if (h.frozen > 0) extra = `<span>Go in <strong>${Math.ceil(h.frozen)}s</strong></span>`;
-    else if (h.power) extra = `<span class="power">${h.power.icon} <strong>${h.power.label}</strong> · press E</span>`;
+    else if (h.power) extra = `<span class="power">${h.power.icon} <strong>${h.power.label}</strong> · ${document.body.classList.contains('mobile') ? 'tap ⚡' : 'press E'}</span>`;
     else extra = '<span>Power-up <strong>charging</strong></span>';
   } else {
     extra = h.dIt != null ? `<span>IT (${esc(h.itName)}) <strong>${Math.round(h.dIt)} m</strong></span>` : `<span>IT: <strong>${esc(h.itName)}</strong></span>`;

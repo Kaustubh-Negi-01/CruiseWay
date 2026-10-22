@@ -373,3 +373,89 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 body.hunt-danger #huntDanger { opacity: 1; }
 @keyframes huntPulse { 50% { box-shadow: inset 0 0 70px 14px rgba(255,30,60,.35); } }
 .results li.lost { color: #ff8a8a; }
+
+/* =====================================================================
+   Phones (body.mobile): landscape, thumb controls, compact HUD
+   ===================================================================== */
+.mobile-only { display: none; }
+body.mobile .mobile-only { display: revert; }
+body.mobile .desk-only { display: none !important; }
+body.mobile { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+body.mobile canvas#view { touch-action: none; }
+
+/* hold the phone sideways */
+#rotate { display: none; }
+@media (orientation: portrait) {
+  body.mobile #rotate { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+    background: #0e1014; color: #fff; font: 600 18px system-ui; text-align: center; padding: 24px; }
+}
+.rot-phone { width: 56px; height: 96px; border: 4px solid #fff; border-radius: 12px; animation: rotPhone 2s ease-in-out infinite; }
+@keyframes rotPhone { 0%, 20% { transform: rotate(0); } 50%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+
+/* the radio is a PC feature */
+body.mobile #nowPlaying, body.mobile #radio, body.mobile #ytCard { display: none !important; }
+
+/* menus fit a short landscape screen */
+body.mobile .menu-card { padding: 16px 20px; max-height: calc(100vh - 24px); overflow: auto; }
+body.mobile .logo { font-size: 30px; }
+body.mobile .tag { margin: 2px 0 6px; font-size: 13px; }
+body.mobile .foot { bottom: 6px; }
+body.mobile .card { padding: 14px 16px; max-height: calc(100vh - 16px); }
+body.mobile .modal { padding: 8px; }
+body.mobile #pause .pane { min-height: 0; }
+
+/* compact HUD */
+body.mobile #minimap { width: 112px; height: 112px; top: calc(8px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
+body.mobile #skyInfo { top: 124px; right: calc(10px + env(safe-area-inset-right)); width: 112px; font-size: 10px; gap: 6px; }
+body.mobile #skyInfo b { font-size: 11px; }
+body.mobile .tl { top: 8px; left: calc(62px + env(safe-area-inset-left)); max-width: 220px; }
+body.mobile #roster { display: none; }
+body.mobile .chip-world { transform: scale(.85); transform-origin: left top; }
+body.mobile .speedo { right: auto; left: 50%; transform: translateX(-50%); bottom: 8px; top: auto; text-align: center; }
+body.mobile .speedo .dial span { font-size: 34px; }
+body.mobile .speedo .trip, body.mobile #wheelie small { display: none; }
+body.mobile #wheelie { justify-content: center; margin-top: 2px; }
+body.mobile #wheelie .wl-bar { width: 80px; }
+body.mobile #raceBar { top: 8px; bottom: auto; padding: 6px 12px; gap: 10px; max-width: calc(100vw - 330px); flex-wrap: wrap; justify-content: center; }
+body.mobile #raceBar b { font-size: 20px; }
+body.mobile #lobbyBar { top: 54px; bottom: auto; max-width: calc(100vw - 300px); font-size: 12px; white-space: normal; }
+body.mobile #toasts { top: 96px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); width: min(420px, 60vw); }
+body.mobile #flash { top: 30%; }
+body.mobile #countdown { font-size: 96px; }
+body.mobile #guide { top: 56px; transform: translateX(-50%) scale(.85); }
+body.mobile #nav { top: 150px; right: 10px; transform: scale(.85); transform-origin: right top; }
+body.mobile #standings { top: 150px; transform: scale(.85); transform-origin: right top; }
+body.mobile #spotPrompt { bottom: auto; top: 50%; transform: translate(-50%, -50%); }
+body.mobile #stats { display: none !important; }
+
+/* ---------- thumb controls ---------- */
+body.mobile #touch { display: block; }
+#touch .t-steer { position: absolute; left: 0; top: 64px; bottom: 0; width: 44vw; pointer-events: auto; touch-action: none; }
+#touch .t-hint { position: absolute; left: calc(24px + env(safe-area-inset-left)); bottom: 22px; font: 700 12px system-ui; letter-spacing: .08em; color: rgba(255,255,255,.55);
+  padding: 8px 12px; border-radius: 20px; border: 1px dashed rgba(255,255,255,.3); transition: opacity .2s; }
+#touch .t-steer.active .t-hint { opacity: 0; }
+#touch .t-ring { position: absolute; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
+  background: rgba(0,0,0,.15); opacity: 0; transition: opacity .12s; pointer-events: none; }
+#touch .t-steer.active .t-ring { opacity: 1; }
+#touch .t-ring i { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px; border-radius: 50%; background: rgba(255,255,255,.55); }
+#touch .t-btn { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.32); background: rgba(10,12,16,.35); color: #fff;
+  font: 800 13px system-ui; letter-spacing: .06em; pointer-events: auto; touch-action: none; backdrop-filter: blur(4px); padding: 0; }
+#touch .t-btn.down { background: rgba(255,255,255,.32); transform: scale(.95); }
+#touch .t-btn.hidden { display: none; }
+#touch .t-gas { right: calc(16px + env(safe-area-inset-right)); bottom: 16px; width: 104px; height: 104px; border-color: rgba(120,255,160,.6); }
+#touch .t-brake { right: calc(132px + env(safe-area-inset-right)); bottom: 14px; width: 80px; height: 80px; border-color: rgba(255,120,120,.6); }
+#touch .t-drift { right: calc(140px + env(safe-area-inset-right)); bottom: 106px; width: 62px; height: 62px; font-size: 11px; }
+#touch .t-wheelie { right: calc(26px + env(safe-area-inset-right)); bottom: 132px; width: 84px; height: 44px; border-radius: 22px; font-size: 11px; }
+#touch .t-power { right: calc(222px + env(safe-area-inset-right)); bottom: 24px; width: 70px; height: 70px; font-size: 30px; border-color: #ffd84a;
+  box-shadow: 0 0 22px rgba(255,216,74,.6); animation: huntPulse 1s ease-in-out infinite; }
+#touch .t-pause, #touch .t-cam, #touch .t-reset, #touch .t-veh { width: 44px; height: 44px; font-size: 18px; top: calc(8px + env(safe-area-inset-top)); }
+#touch .t-pause { left: calc(10px + env(safe-area-inset-left)); }
+#touch .t-cam { right: calc(132px + env(safe-area-inset-right)); }
+#touch .t-reset { right: calc(182px + env(safe-area-inset-right)); }
+#touch .t-veh { right: calc(232px + env(safe-area-inset-right)); }
+
+/* the big map on a phone */
+body.mobile .map-top { top: 8px; left: 10px; right: 10px; font-size: 12px; }
+body.mobile .map-top h2 { font-size: 18px; }
+body.mobile .map-legend { bottom: 8px; left: 8px; right: 8px; flex-wrap: wrap; gap: 6px; font-size: 11px; }
+body.mobile #spotCard { max-height: calc(100vh - 90px); overflow: auto; right: 8px; top: 44px; width: min(300px, 46vw); }
