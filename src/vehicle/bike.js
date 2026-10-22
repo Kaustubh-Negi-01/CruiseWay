@@ -14,6 +14,7 @@ export const BIKE = {
   steer: 1.7, handbrakeGrip: 1.6,
   camDist: 5.0, camHeight: 1.7,
   rearZ: -0.88,      // rear axle position along the bike (wheelies pivot here)
+  contacts: [[0, 0.88], [0, -0.88]],   // tyre contact points (x across, z along)
 };
 
 // glow colours handed out to players in join order
@@ -23,6 +24,7 @@ const BODY = { '#38e8ff': '#e2541f', '#ff4fd8': '#2b2f45', '#ffb627': '#1f6f8b',
 
 let ENV = null;
 export function setBikeEnvironment(envMap) { ENV = envMap; }
+export function getBikeEnvironment() { return ENV; }
 
 // Reflections dim at night and under cloud (the reflection map is a daytime sky).
 export function setEnvLevel(root, level) {
@@ -100,7 +102,7 @@ function treadTexture() {
 }
 
 let GLOW_TEX = null;
-function glowTexture() {
+export function glowTexture() {
   if (GLOW_TEX) return GLOW_TEX;
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -288,7 +290,7 @@ export function setBikeView(root, view) {
 
 // ---- digital speedometer ------------------------------------------------------
 
-function makeDash(color) {
+export function makeDash(color) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 300;
   const tex = new THREE.CanvasTexture(c);
@@ -399,7 +401,7 @@ export function disposeModel(root) {
   const seen = new Set();
   root.traverse((o) => {
     if (!o.isMesh) return;
-    o.geometry.dispose();
+    if (!o.geometry.userData.shared) o.geometry.dispose();   // shared shapes (car tyres) stay
     if (!seen.has(o.material)) {
       seen.add(o.material);
       const map = o.material.map;

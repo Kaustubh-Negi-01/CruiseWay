@@ -341,3 +341,18 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 .code-row .code-input { flex: 1; min-width: 0; }
 .or { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+/* ---------- vehicle picker (V) ---------- */
+.garage-list { display: grid; gap: 10px; margin-top: 8px; }
+.garage-item { text-align: left; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: inherit; font: inherit; cursor: pointer; }
+.garage-item:hover { border-color: rgba(255,255,255,.3); }
+.garage-item.on { border-color: var(--accent); background: rgba(232,196,74,.08); }
+.garage-item .g-head { display: flex; align-items: center; gap: 10px; }
+.garage-item .g-head b { font-size: 17px; }
+.garage-item .g-head em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+.garage-item p { margin: 6px 0 10px; color: var(--muted); font-size: 13px; }
+.g-stat { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.g-stat i { display: block; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) var(--w), rgba(255,255,255,.1) var(--w)); }
+#garage .card { width: min(760px, 100%); }
+.garage-list { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+.garage-item .g-img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; margin-bottom: 12px; background: #14171c; }

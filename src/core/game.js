@@ -5,7 +5,8 @@ import { WeatherFX } from '../world/rendering/weather.js';
 import { ATMOS } from '../world/rendering/materials.js';
 import { Climate, WEATHER } from '../world/climate/climate.js';
 import { Bike, WHEELIE, poseLean } from '../vehicle/physics.js';
-import { buildBike, ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, setEnvLevel, EYE } from '../vehicle/bike.js';
+import { ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeView, updateDash, setEnvLevel } from '../vehicle/bike.js';
+import { vehicleFor } from '../vehicle/vehicles.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
@@ -17,7 +18,6 @@ const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts
 const CP_RADIUS = 22;
 const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
 const LOBBY_SECONDS = 15;   // gathering window before a race (any member can start early)
-const NOSE = new THREE.Vector3(0, 0.62, 1.34);
 const ROLL_Z = new THREE.Quaternion(), ROLL_FULL = new THREE.Quaternion();
 const PITCH = new THREE.Quaternion(), LOOK_UP = new THREE.Quaternion();
 // In a wheelie the first-person views look up further than the bike lifts
@@ -80,6 +80,7 @@ export class Game {
     this.running = false;
     this.previewing = false;
     this.bestTimes = {};       // spot id -> best time this session
+    this.vehicle = 'bike';     // 'bike' | 'car' (V to switch)
     addEventListener('resize', () => this.resize());
     this.resize();
 
@@ -111,7 +112,7 @@ export class Game {
     this.weather = new WeatherFX(scene, presetFor(this.quality).weather);
     // headlight: lives on the bike (see setModel), lit at night and in bad weather
     this.headlight = new THREE.SpotLight(0xfff0dc, 0, 150, 0.5, 0.6, 1.2);
-    this.headlight.position.set(0, 0.95, 1.2);   // just ahead of the nose, so it doesn't light the bike itself
+
     this.headlight.target.position.set(0, 0.2, 24);
     this.car = new Bike(this.world);
     this.car.onImpact = (kind, v) => {
@@ -258,11 +259,17 @@ export class Game {
   }
 
   setModel(color) {
-    if (this.model && this.modelColor === color) return;
+    if (this.model && this.modelColor === color && this.modelKind === this.vehicle) return;
     if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
-    this.model = buildBike(color);
+    const v = vehicleFor(this.vehicle);
+    this.model = v.build(color);
     this.modelColor = color;
+    this.modelKind = this.vehicle;
+    this.car.setSpec(v.spec);
+    this.view = null;   // re-apply the camera view to the new model
     this.scene.add(this.model);
+    // just ahead of the nose, so it doesn't light the vehicle itself
+    if (this.headlight) this.headlight.position.copy(v.lamp);
     // the headlight leans and pitches with the bike (a wheelie points it at the sky)
     if (this.headlight) this.model.userData.lean.add(this.headlight, this.headlight.target);
     this.envLevelSet = -1;
@@ -339,7 +346,7 @@ export class Game {
     this.car.odometer = 0;
 
     if (this.isHost) {
-      this.players.set(this.selfId, { id: this.selfId, name, color: COLORS[0], wins: 0 });
+      this.players.set(this.selfId, { id: this.selfId, name, color: COLORS[0], wins: 0, vehicle: this.vehicle });
       net.on('message', (from, msg) => this.hostHandle(from, msg));
       net.on('leave', (id) => this.hostLeave(id));
     } else {
@@ -451,7 +458,7 @@ export class Game {
       race: this.race,
       lobby: this.lobby,
       nav: this.nav,
-      wheelie: { ...this.car.wheelie, speedOk: this.car.forwardSpeed > WHEELIE.minSpeed, start: WHEELIE.startMeter },
+      wheelie: this.car.spec.wheelie === false ? null : { ...this.car.wheelie, speedOk: this.car.forwardSpeed > WHEELIE.minSpeed, start: WHEELIE.startMeter },
     });
     // nothing to see behind the full-screen map: save the GPU the work
     if (!this.ui.mapOpen) this.renderer.render(this.scene, this.camera);
@@ -510,6 +517,84 @@ export class Game {
     }
   }
 
+  // Swap rides on the spot (V menu). Not mid-race: you finish on what you started with.
+  setVehicle(kind) {
+    kind = kind === 'car' ? 'car' : 'bike';
+    if (kind === this.vehicle) return true;
+    const r = this.race;
+    if (this.running && r?.participant && !r.finished) {
+      this.ui.toast('You can switch rides after the race.');
+      return false;
+    }
+    this.vehicle = kind;
+    document.getElementById('wheelie')?.classList.toggle('hidden', kind !== 'bike');
+    if (!this.world) return true;
+    this.setModel(this.modelColor);
+    this.camPos = null;
+    if (this.running) {
+      const me = this.players.get(this.selfId);
+      if (me) me.vehicle = kind;
+      this.toHost({ t: 'vehicle', v: kind });
+    }
+    return true;
+  }
+
+  // A studio shot of a vehicle for the V menu, in the player's colour (cached).
+  // It's drawn into a corner of the game canvas and copied out straight away,
+  // so it needs no second WebGL context; the next frame paints over it.
+  vehicleThumb(kind, color = this.modelColor || COLORS[0]) {
+    const key = kind + color;
+    this.thumbs ||= {};
+    if (this.thumbs[key]) return this.thumbs[key];
+    const r = this.renderer, pr = r.getPixelRatio(), full = r.getSize(new THREE.Vector2());
+    const W = Math.min(480, Math.floor(full.x)), H = Math.round(W * 9 / 16);
+    if (W < 16 || H > full.y) return null;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x14171c);
+    scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2622, 1.5));
+    const keyLight = new THREE.DirectionalLight(0xfff1e0, 3.2);
+    keyLight.position.set(4, 6, 6);
+    const rim = new THREE.DirectionalLight(0x9fc4ff, 2.2);
+    rim.position.set(-5, 3, -5);
+    scene.add(keyLight, rim);
+    const model = vehicleFor(kind).build(color);
+    scene.add(model);
+    const box = new THREE.Box3().setFromObject(model);
+    const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    shadow.scale.set(size.x * 0.7, 1, size.z * 0.62);
+    shadow.position.set(centre.x, 0.005, centre.z);
+    scene.add(shadow);
+    // three-quarter view from the front right, framed to fit
+    const cam = new THREE.PerspectiveCamera(28, W / H, 0.1, 100);
+    const dir = new THREE.Vector3(1.15, 0.5, 1.25).normalize();
+    const dist = (size.length() / 2) / Math.sin(THREE.MathUtils.degToRad(28) / 2) * 0.62;
+    cam.position.copy(centre).addScaledVector(dir, dist);
+    cam.lookAt(centre.x, centre.y * 0.8, centre.z);
+
+    const exposure = r.toneMappingExposure;
+    r.toneMappingExposure = 1.05;
+    r.setScissorTest(true);
+    r.setViewport(0, 0, W, H);
+    r.setScissor(0, 0, W, H);
+    r.render(scene, cam);
+    const out = document.createElement('canvas');
+    out.width = Math.round(W * pr); out.height = Math.round(H * pr);
+    out.getContext('2d').drawImage(r.domElement, 0, r.domElement.height - out.height, out.width, out.height, 0, 0, out.width, out.height);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, full.x, full.y);
+    r.toneMappingExposure = exposure;
+
+    disposeModel(model);
+    shadow.geometry.dispose();
+    shadow.material.dispose();
+    return (this.thumbs[key] = out.toDataURL('image/jpeg', 0.9));
+  }
+
   // "Clear skies" setting: show sunny weather here regardless of the forecast.
   setClearSkies(on) {
     this.clearSkies = on;
@@ -545,7 +630,8 @@ export class Game {
       ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45 + up * 0.05 * Math.sin(w.t * 1.7));
       PITCH.setFromAxisAngle(_v2.set(1, 0, 0), -w.angle);
       LOOK_UP.setFromAxisAngle(_v2.set(1, 0, 0), -(w.angle + this.lookLift * (WHEELIE_LOOK - 1)));
-      const eye = _v.copy(view === 'cockpit' ? EYE : NOSE);
+      const vd = vehicleFor(this.vehicle);
+      const eye = _v.copy(view === 'cockpit' ? vd.eye : vd.nose);
       if (view === 'cockpit') eye.addScaledVector(WHEELIE_SIT, up);
       eye.applyQuaternion(ROLL_FULL);
       eye.z -= s.rearZ; eye.applyQuaternion(PITCH); eye.z += s.rearZ;   // pivot on the back tyre
@@ -743,8 +829,9 @@ export class Game {
       p.qa.set(...a.s.q); p.qb.set(...b.s.q);
       g.quaternion.slerpQuaternions(p.qa, p.qb, t);
       const ud = g.userData;
-      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, this.car.spec.rearZ);
-      ud.steerer.rotation.y = (a.s.st || 0) * 0.25 * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
+      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, vehicleFor(p.vehicle).spec.rearZ);
+      const sa = (a.s.st || 0) * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
+      for (const st of ud.steerers || [ud.steerer]) st.rotation.y = sa;
       p.spin = (p.spin || 0) + (a.s.v / 0.37) * (1 / 60);
       for (const w of ud.wheels) w.rotation.x = p.spin;
       while (buf.length > 2 && buf[1].t < renderT) buf.shift();
@@ -753,9 +840,9 @@ export class Game {
 
   makeGhost(p) {
     this.removeGhost(p);
-    const g = ghostify(buildBike(p.color));
+    const g = ghostify(vehicleFor(p.vehicle).build(p.color));
     const tag = nameSprite(p.name, p.color);
-    tag.position.y = 2.1;
+    tag.position.y = p.vehicle === 'car' ? 2.3 : 2.1;
     g.add(tag);
     p.ghost = g;
     p.qa = new THREE.Quaternion();
@@ -780,7 +867,7 @@ export class Game {
   }
 
   rosterList() {
-    return [...this.players.values()].map(({ id, name, color, wins }) => ({ id, name, color, wins }));
+    return [...this.players.values()].map(({ id, name, color, wins, vehicle }) => ({ id, name, color, wins, vehicle: vehicle || 'bike' }));
   }
 
   // ---- messaging helpers ------------------------------------------------------
@@ -820,10 +907,19 @@ export class Game {
         const used = new Set([...this.players.values()].map((p) => p.color));
         const color = COLORS.find((c) => !used.has(c)) || COLORS[this.players.size % COLORS.length];
         const name = String(msg.name || 'Rider').slice(0, 16);
-        this.players.set(from, { id: from, name, color, wins: 0 });
+        this.players.set(from, { id: from, name, color, wins: 0, vehicle: msg.vehicle === 'car' ? 'car' : 'bike' });
         this.sendWelcome(from);
         this.sendAll({ t: 'roster', list: this.rosterList() });
         this.sendAll({ t: 'toast', text: `${name} joined the world` });
+        break;
+      }
+      case 'vehicle': {
+        const p = this.players.get(from);
+        if (!p) break;
+        const v = msg.v === 'car' ? 'car' : 'bike';
+        if (p.vehicle !== v && from !== this.selfId) this.removeGhost(p);   // the host's own view of them
+        p.vehicle = v;
+        this.sendAll({ t: 'roster', list: this.rosterList() });
         break;
       }
       case 'st': {
@@ -1000,6 +1096,7 @@ export class Game {
         for (const [id, p] of this.players) if (!ids.has(id)) { this.removeGhost(p); this.players.delete(id); }
         for (const p of msg.list) {
           const cur = this.players.get(p.id);
+          if (cur && cur.vehicle !== p.vehicle) this.removeGhost(cur);   // switched rides: rebuilt next frame
           if (cur) Object.assign(cur, p);
           else this.players.set(p.id, { ...p });
         }

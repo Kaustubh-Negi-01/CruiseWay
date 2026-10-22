@@ -47,6 +47,8 @@ export class Bike {
     this.smoothNormal = new THREE.Vector3(0, 1, 0);
     this.bodyY = 0;          // suspension-smoothed height used for rendering
     this.bodyVy = 0;
+    this.rideLift = 0.035;   // see update(): roads are drawn a little above the ground
+    this.groundFit = 0;      // extra lift so no tyre sinks into a dip
     this.wheelSpin = 0;
     this.acc = 0;
     this.lastGround = 0;
@@ -69,6 +71,12 @@ export class Bike {
     this.prevYaw = 0;
     this.renderPos = new THREE.Vector3();
     this.renderYaw = 0;
+  }
+
+  // Switch rides (bike / car): tuning only, the bike keeps its place and speed.
+  setSpec(spec) {
+    this.spec = spec;
+    if (this.wheelie) { this.wheelie.active = false; this.wheelie.angle = 0; }
   }
 
   get speed() { return Math.hypot(this.vel.x, this.vel.z); }
@@ -125,14 +133,30 @@ export class Bike {
     this.bodyVy += ((gy - this.bodyY) * k + (this.groundVy - this.bodyVy) * c) * dt;
     this.bodyY += this.bodyVy * dt;
     // never sit below the road surface, and never float far above it
-    if (this.bodyY < gy - 0.05) { this.bodyY = gy - 0.05; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
+    if (this.bodyY < gy - 0.01) { this.bodyY = gy - 0.01; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
+    // Road meshes are drawn 3 cm above the ground they follow (junction pads
+    // 6 cm), so on a road the tyres ride a little higher to sit on the
+    // tarmac rather than in it. Eased, so crossing onto grass isn't a step.
+    const ride = this.surface === 0 ? 0.01 : 0.035;
+    this.rideLift += (ride - this.rideLift) * (1 - Math.exp(-dt * 8));
+    // In a dip, the ground under the tyres rises above the tilt plane through
+    // the centre (more so on a long car): lift the body so none sinks in.
+    let fit = 0;
+    const n = this.smoothNormal, fx = Math.sin(this.renderYaw), fz = Math.cos(this.renderYaw);
+    for (const [sx, sz] of this.spec.contacts || []) {
+      const dx = fz * sx + fx * sz, dz = -fx * sx + fz * sz;
+      const plane = gy - (n.x * dx + n.z * dz) / n.y;
+      fit = Math.max(fit, this.world.heightAt(this.renderPos.x + dx, this.renderPos.z + dz) - plane);
+    }
+    this.groundFit += (Math.min(fit, 0.4) - this.groundFit) * (1 - Math.exp(-dt * 20));
     if (this.bodyY > gy + 0.35) this.bodyY = gy + 0.35;
 
     const vf = this.forwardSpeed;
-    this.wheelSpin += (vf / 0.31) * dt;
+    this.wheelSpin += (vf / (this.spec.wheelR || 0.31)) * dt;
     this.odometer += Math.abs(vf) * dt;
     // lean from the centripetal demand of the turn: tan(lean) = v * yawRate / g
-    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62);
+    // (a car rolls a little the other way: spec.lean scales and flips it)
+    const target = clamp(-Math.atan((this.yawRate * Math.abs(vf)) / 9.8) * 0.85, -0.62, 0.62) * (this.spec.lean ?? 1);
     this.lean += (target - this.lean) * (1 - Math.exp(-dt * 5));
     // front wheel up / down
     const w = this.wheelie;
@@ -151,7 +175,7 @@ export class Bike {
     const w = this.wheelie;
     if (w.active) {
       if (!input.wheelie || input.brake > 0 || vf < WHEELIE.dropSpeed || w.meter <= 0) this.endWheelie();
-    } else if (input.wheelie && this.onGround && vf > WHEELIE.minSpeed && !input.brake && w.meter >= WHEELIE.startMeter && w.rest <= 0) {
+    } else if (input.wheelie && s.wheelie !== false && this.onGround && vf > WHEELIE.minSpeed && !input.brake && w.meter >= WHEELIE.startMeter && w.rest <= 0) {
       w.active = true;
     }
     if (w.active) {
@@ -264,7 +288,7 @@ export class Bike {
     const trunks = this.world.gen.trunksNear(this.pos.x, this.pos.z, this.trunkBuf || (this.trunkBuf = []));
     for (const t of trunks) {
       const dx = this.pos.x - t.x, dz = this.pos.z - t.z;
-      const d = Math.hypot(dx, dz), min = t.r + 0.35;
+      const d = Math.hypot(dx, dz), min = t.r + (this.spec.radius || 0.35);
       if (d >= min || d < 1e-4) continue;
       const nx = dx / d, nz = dz / d;
       this.pos.x = t.x + nx * min;
@@ -292,11 +316,12 @@ export class Bike {
   }
 
   applyTo(model) {
-    model.position.set(this.renderPos.x, this.bodyY, this.renderPos.z);
+    model.position.set(this.renderPos.x, this.bodyY + this.rideLift + this.groundFit, this.renderPos.z);
     this.orientation(model.quaternion);
     const ud = model.userData;
     poseLean(ud.lean, this.lean, this.wheelie.angle, this.spec.rearZ);
-    ud.steerer.rotation.y = this.steer * 0.25 * Math.max(0.2, 1 - this.speed / 30);
+    const sa = this.steer * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - this.speed / 30);
+    for (const st of ud.steerers || [ud.steerer]) st.rotation.y = sa;
     for (const w of ud.wheels) w.rotation.x = this.wheelSpin;
   }
 
@@ -305,7 +330,7 @@ export class Bike {
     const r = (v) => Math.round(v * 100) / 100;
     const r3 = (v) => Math.round(v * 1000) / 1000;
     return {
-      p: [r(this.pos.x), r(this.bodyY), r(this.pos.z)],
+      p: [r(this.pos.x), r(this.bodyY + this.rideLift + this.groundFit), r(this.pos.z)],
       q: [r3(_q.x), r3(_q.y), r3(_q.z), r3(_q.w)],
       l: r(this.lean),
       w: r(this.wheelie.angle),

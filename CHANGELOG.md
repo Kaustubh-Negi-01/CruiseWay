@@ -2,6 +2,20 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
+## 1.1 · Hypercar, menus and joining
+
+- **Hypercar:**
+  - A second ride, an original single-seat hypercar: a low carbon body, a bubble canopy, carved fenders, side pods with chrome blades, a tall rear wing on struts, and turbine wheels with sidewall stripes in your colour.
+  - Its own handling: faster (~210 km/h), quicker off the line, more grip, a little body roll, and no wheelies.
+  - Its own cockpit view, with a steering yoke and dash under the canopy.
+- **V opens the vehicle picker**, with a studio render of each ride in your colour. Press 1 or 2, or click.
+  - Your choice is remembered, and other players see it on your ghost.
+  - You can't switch mid-race.
+- **Tyres sit on the road:** roads are drawn a few cm above the ground they follow, so tyres used to sink in. Now they ride on the surface. The body also lifts where the ground under a tyre rises (dips), and the car's wheels no longer tip with the body when it rolls in corners.
+- **Esc menu** split into General, Graphics, Audio and Controls tabs.
+- **Start menu:** asks for your name first. Invite links join right after the name.
+- **Joining:** a sturdier handshake, and TURN relay support via `/api/ice` for players on different networks (needs the env vars, see README).
+
 ## 1.0 · Day, night and weather
 
 **Day cycle**
