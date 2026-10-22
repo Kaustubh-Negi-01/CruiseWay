@@ -527,6 +527,7 @@ export class Game {
       return false;
     }
     this.vehicle = kind;
+    this.sound?.setVehicle(kind);
     document.getElementById('wheelie')?.classList.toggle('hidden', kind !== 'bike');
     if (!this.world) return true;
     this.setModel(this.modelColor);

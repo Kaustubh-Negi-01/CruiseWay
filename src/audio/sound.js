@@ -7,23 +7,30 @@ import { WeatherSound } from './weather.js';
 //           │                + weather (rain, wind, thunder: see weather.js)
 //           └─ music bus ─── zen soundtrack
 //
-// Riding sound is only the two recordings in public/audio: one for tarmac,
-// one for grass and dirt. Short loops are cut from each (idle, low revs, high
-// revs) and blended by engine revs and by the surface under the bike.
+// Riding sound is only real recordings in public/audio. The bike uses two:
+// one for tarmac, one for grass and dirt. The hypercar uses a Porsche flat-six
+// recorded on board (engine-car.wav, CC BY-SA 3.0, see the README credits).
+// Short loops are cut from each (idle, low revs, high revs) and blended by
+// engine revs through a simulated gearbox, and for the bike by surface.
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-// Six-speed gearbox: engine rpm per m/s of road speed in each gear.
-const GEARS = [0, 500, 335, 255, 200, 162, 136];
-const IDLE = 1100, UPSHIFT = 6600, DOWNSHIFT = 2700;
+// Gearbox and rev range per vehicle: engine rpm per m/s of road speed in
+// each gear, idle, shift points, and how far each loop may be sped up or
+// slowed down (the car's loops are steady tones, so they stretch further).
+const ENGINES = {
+  bike: { gears: [0, 500, 335, 255, 200, 162, 136], idle: 1100, up: 6600, down: 2700, max: 8200, low: 3000, high: 6500, rateLow: [0.85, 1.2], rateHigh: [0.85, 1.15] },
+  car: { gears: [0, 420, 290, 215, 170, 140, 118, 102], idle: 900, up: 6800, down: 3000, max: 7600, low: 2600, high: 6000, rateLow: [0.8, 1.35], rateHigh: [0.85, 1.25] },
+};
 
 // Loop sections, in seconds into each clip. Tune by ear if needed.
 const SAMPLES = {
   road: { file: 'engine-road.mp3',    idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
   off:  { file: 'engine-offroad.mp3', idle: [1.0, 2.0], low: [4.0, 6.0], high: [9.6, 11.4] },
+  // idle, steady cruise, and a hard pull, cut from the Porsche recording
+  car:  { file: 'engine-car.wav',     idle: [0.0, 0.6], low: [0.85, 3.1], high: [3.35, 4.7], gain: 1.0 },
 };
 const BANDS = ['idle', 'low', 'high'];
-const LOW_RPM = 3000, HIGH_RPM = 6500;
 
 export const DEFAULT_SOUND = { master: 0.8, effects: 0.8, music: 0.45, effectsOn: true, musicOn: true };
 
@@ -32,6 +39,7 @@ export class SoundManager {
     this.settings = { ...DEFAULT_SOUND, ...settings };
     this.ctx = null;
     this.riding = false;
+    this.vehicle = 'bike';
   }
 
   // Browsers only allow audio after a click or key press.
@@ -111,21 +119,30 @@ export class SoundManager {
     if (s.musicOn) this.music.start(); else this.music.stop();
   }
 
-  // ---- riding sound: the two recordings ------------------------------------------
+  // ---- riding sound: the recordings ------------------------------------------
+
+  // Bike or car: which recordings and gearbox to use.
+  setVehicle(kind) {
+    const v = kind === 'car' ? 'car' : 'bike';
+    if (v === this.vehicle) return;
+    this.vehicle = v;
+    this.gear = 1;
+  }
 
   startRide() {
     this.wantRide = true;
     if (!this.ctx || this.riding) return;
     this.riding = true;
     this.gear = 1;
-    this.rpm = IDLE;
+    this.rpm = ENGINES[this.vehicle].idle;
     this.shiftUntil = 0;
     this.surfaceMix = 1;
     this.lastT = this.ctx.currentTime;
     this.startVoices();
   }
 
-  // Six looping voices: road/off-road × idle/low/high.
+  // Looping voices: (road, off-road, car) × (idle, low, high). The ones not in
+  // use sit at zero volume.
   startVoices() {
     if (!this.samples || this.voices) return;
     const ctx = this.ctx;
@@ -160,39 +177,104 @@ export class SoundManager {
     const sp = Math.max(0, b.speed);
 
     // gearbox: upshifts cut the throttle briefly and drop the revs
+    const E = ENGINES[this.vehicle], G = E.gears;
+    this.gear = Math.min(this.gear, G.length - 1);
     const shifting = t < this.shiftUntil;
     const throttle = shifting ? 0 : b.throttle;
     if (!shifting) {
-      if (this.gear < 6 && sp * GEARS[this.gear] > UPSHIFT && b.throttle > 0.1) { this.gear++; this.shiftUntil = t + 0.16; }
-      else if (this.gear > 1 && sp * GEARS[this.gear] < DOWNSHIFT) this.gear--;
+      if (this.gear < G.length - 1 && sp * G[this.gear] > E.up && b.throttle > 0.1) {
+        const at = sp * G[this.gear];       // revs at the shift point
+        this.gear++;
+        this.shiftUntil = t + (this.vehicle === 'car' ? 0.12 : 0.09);
+        this.shiftFx(true, at, b.throttle);
+      } else if (this.gear > 1 && sp * G[this.gear] < E.down) {
+        this.gear--;
+        this.blipUntil = t + 0.16;          // rev-matching blip on the way down
+        this.shiftFx(false, sp * G[this.gear], b.throttle);
+      }
     }
-    let target = Math.max(IDLE, sp * GEARS[this.gear]);
-    if (sp < 4) target = Math.max(target, IDLE + throttle * 1800);
+    let target = Math.max(E.idle, sp * G[this.gear]);
+    if (t < (this.blipUntil || 0)) target += this.vehicle === 'car' ? 1100 : 800;
+    if (sp < 4) target = Math.max(target, E.idle + throttle * 1800);
     if (!b.onGround) target += throttle * 900;
-    this.rpm += (Math.min(8200, target) - this.rpm) * (1 - Math.exp(-dt * (shifting ? 18 : 9)));
+    this.rpm += (Math.min(E.max, target) - this.rpm) * (1 - Math.exp(-dt * (shifting ? 18 : 9)));
     const rpm = this.rpm;
 
     // which loops: idle when stopped and off the throttle, else low<->high by revs
     const idle = clamp01(1 - Math.max(sp / 4, throttle * 2));
-    const x = clamp01((rpm - LOW_RPM) / (HIGH_RPM - LOW_RPM));
+    const x = clamp01((rpm - E.low) / (E.high - E.low));
     const wIdle = Math.sqrt(idle);
     const wLow = Math.sqrt(1 - idle) * Math.cos(x * Math.PI / 2);
     const wHigh = Math.sqrt(1 - idle) * Math.sin(x * Math.PI / 2);
     // only gentle speed changes, so the clips keep their own character
-    const rateLow = Math.min(1.2, Math.max(0.85, rpm / LOW_RPM));
-    const rateHigh = Math.min(1.15, Math.max(0.85, rpm / HIGH_RPM));
+    const rateLow = Math.min(E.rateLow[1], Math.max(E.rateLow[0], rpm / E.low));
+    const rateHigh = Math.min(E.rateHigh[1], Math.max(E.rateHigh[0], rpm / E.high));
 
-    // your road clip on tarmac, your off-road clip on grass and dirt
+    // bike: your road clip on tarmac, your off-road clip on grass and dirt.
+    // car: the Porsche recording everywhere.
     const onRoad = b.surface === 1 ? 1 : 0;
     this.surfaceMix += (onRoad - this.surfaceMix) * (1 - Math.exp(-dt * 3));
-    const road = Math.sqrt(this.surfaceMix), off = Math.sqrt(1 - this.surfaceMix);
-    for (const [surface, s] of [['road', road], ['off', off]]) {
-      this.setVoice(surface + 'idle', wIdle * s, 1, t, T);
-      this.setVoice(surface + 'low', wLow * s, rateLow, t, T);
-      this.setVoice(surface + 'high', wHigh * s, rateHigh, t, T);
+    const car = this.vehicle === 'car';
+    const mixes = car
+      ? [['road', 0], ['off', 0], ['car', SAMPLES.car.gain]]
+      : [['road', Math.sqrt(this.surfaceMix)], ['off', Math.sqrt(1 - this.surfaceMix)], ['car', 0]];
+    for (const [set, s] of mixes) {
+      this.setVoice(set + 'idle', wIdle * s, car ? 0.9 + throttle * 0.15 : 1, t, T);
+      this.setVoice(set + 'low', wLow * s, rateLow, t, T);
+      this.setVoice(set + 'high', wHigh * s, rateHigh, t, T);
     }
-    // a little quieter when coasting than under throttle
-    this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+    // a little quieter when coasting than under throttle; on an upshift the
+    // ignition cut makes the engine drop out for a moment
+    if (shifting) this.rideGain.gain.setTargetAtTime(0.2, t, 0.012);
+    else this.rideGain.gain.setTargetAtTime(0.5 + throttle * 0.35, t, T);
+  }
+
+  // A gear change you can hear: the gearbox clunks, and when you shift high
+  // in the revs (or blip down off the throttle) the exhaust pops and crackles
+  // as fuel is cut. Full-bodied on the car, quicker and lighter on the bike.
+  shiftFx(up, rpm, throttle) {
+    const ctx = this.ctx, t = ctx.currentTime, car = this.vehicle === 'car';
+    const k = car ? 1 : 0.55;
+    // clunk: a short low knock that falls in pitch...
+    const g = gain(ctx, 0, this.fx);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.34 * k, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    const o = osc(ctx, 'sine', up ? 105 : 85, g);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
+    o.stop(t + 0.15);
+    // ...with the metallic tick of the selector
+    this.burst(0.11 * k, 0.03, 'bandpass', 3400, 1.4);
+    // pops: up near the top of the revs under throttle, or down off throttle
+    const hot = up
+      ? clamp01((rpm - 4300) / 2300) * (throttle > 0.5 ? 1 : 0.35)
+      : clamp01((rpm - 2800) / 3000) * (throttle < 0.2 ? 0.8 : 0.25);
+    const pops = Math.round(hot * (car ? 3 : 2) * (0.6 + Math.random() * 0.7));
+    let at = t + 0.025;
+    for (let i = 0; i < pops; i++) {
+      this.pop(at, (0.22 + Math.random() * 0.18) * k * (0.6 + hot * 0.4));
+      at += 0.04 + Math.random() * 0.08;
+    }
+  }
+
+  // One exhaust pop: a sharp burst of mid noise over a short low thud.
+  pop(at, level) {
+    const ctx = this.ctx;
+    const g = gain(ctx, 0, this.fx);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(level, at + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.05 + Math.random() * 0.05);
+    const f = filter(ctx, 'bandpass', 450 + Math.random() * 950, 1.1, g);
+    const n = ctx.createBufferSource();
+    n.buffer = this.white;
+    n.connect(f);
+    n.start(at, Math.random() * 2, 0.12);
+    const body = gain(ctx, 0, this.fx);
+    body.gain.setValueAtTime(0.0001, at);
+    body.gain.exponentialRampToValueAtTime(level * 0.7, at + 0.004);
+    body.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
+    const o = osc(ctx, 'sine', 65 + Math.random() * 35, body, at);
+    o.stop(at + 0.11);
   }
 
   setVoice(k, w, rate, t, T) {
