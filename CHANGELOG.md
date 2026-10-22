@@ -6,6 +6,7 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 - **Hypercar:**
   - A second ride, an original single-seat hypercar: a low carbon body, a bubble canopy, carved fenders, side pods with chrome blades, a tall rear wing on struts, and turbine wheels with sidewall stripes in your colour.
+  - Its own sound: a real Porsche flat-six recording (CC BY-SA 3.0, John64 on Wikimedia Commons), with idle, cruise and full-throttle loops following a seven-speed gearbox.
   - Its own handling: faster (~210 km/h), quicker off the line, more grip, a little body roll, and no wheelies.
   - Its own cockpit view, with a steering yoke and dash under the canopy.
 - **V opens the vehicle picker**, with a studio render of each ride in your colour. Press 1 or 2, or click.
