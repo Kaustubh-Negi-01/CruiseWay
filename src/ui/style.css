@@ -322,3 +322,10 @@ body.video-on[data-video-corner="bl"] #toasts { bottom: 232px; }
 #skyInfo b { font: 700 14px ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
 #skyInfo.night b { color: #9fb4ff; }
 @media (max-width: 760px) { #skyInfo { top: 150px; width: 130px; } }
+
+/* ---------- Esc menu tabs ---------- */
+.tabs { display: flex; gap: 4px; padding: 4px; margin: 4px 0 6px; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px; }
+.tabs button { flex: 1; padding: 8px 6px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: 600 13px system-ui; cursor: pointer; }
+.tabs button:hover { color: #fff; }
+.tabs button.on { background: var(--accent); color: #14110a; }
+#pause .pane { min-height: 190px; }
