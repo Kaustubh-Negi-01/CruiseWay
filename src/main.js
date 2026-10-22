@@ -7,6 +7,8 @@ import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
 import { VEHICLES } from './vehicle/vehicles.js';
+import { IS_MOBILE, setupMobile, keepAwake } from './mobile/mobile.js';
+import { TouchControls } from './mobile/touchControls.js';
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -18,7 +20,9 @@ const ui = new UI();
 const input = new Input();
 // Graphics settings are read before the renderer exists: anti-aliasing can
 // only be chosen when the GL context is created.
-let quality = store.get('quality', 'auto');
+setupMobile();
+// phones start on Low (lighter on the GPU and the battery); change it in Esc > Graphics
+let quality = store.get('quality', IS_MOBILE ? 'low' : 'auto');
 if (!QUALITY[quality]) quality = 'auto';
 const fpsCap = Number(store.get('fps', '60'));
 let soundPrefs = DEFAULT_SOUND;
@@ -29,6 +33,7 @@ const game = new Game($('#view'), ui, input, { msaa: presetFor(quality).msaa, qu
 // Browsers only start audio after the player interacts with the page.
 const unlockAudio = () => sound.unlock();
 addEventListener('pointerdown', unlockAudio);
+addEventListener('touchend', unlockAudio);   // iOS only unlocks audio on touchend
 addEventListener('keydown', unlockAudio);
 // a soft tick on every button press
 document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.click(); });
@@ -147,9 +152,13 @@ function enterGame({ net, seed, code, welcome }) {
   ui.setWorldCode(code);
   game.start({ net, seed, name: playerName(), welcome });
   ui.attachWorld(game.world);
-  ui.toast('Press Q for the radio.');
+  if (!IS_MOBILE) ui.toast('Press Q for the radio.');
   setupBigMap();
-  input.attachTouch($('#hud'));
+  if (IS_MOBILE) {
+    new TouchControls($('#hud'), input, game);
+    document.body.classList.add('riding');
+    keepAwake(true);   // don't let the screen dim mid-ride
+  } else input.attachTouch($('#hud'));
   if (net.isHost) {
     $('#hostTools').classList.remove('hidden');
     ui.toast(`World created. Share code ${code} with friends!`);
@@ -189,7 +198,7 @@ const radio = new Radio({
 const radioPanel = new RadioPanel(radio);
 radio.setMaster(sound.settings.master);
 radio.on(() => sound.setDuck(radio.playing));
-input.on('radio', () => { if (game.running) radioPanel.toggle(); });
+input.on('radio', () => { if (game.running && !IS_MOBILE) radioPanel.toggle(); });
 input.on('power', (d) => { if (d && game.running) game.hunt.usePower(); });
 
 // ---------------------------------------------------------------- vehicle (V)
@@ -278,10 +287,11 @@ new MutationObserver(() => { ui.mapOpen = !$('#mapOverlay').classList.contains('
 $('#clearRoute').onclick = () => { game.clearWaypoint(); ui.toast('Route cleared.'); };
 $('#centerMe').onclick = () => { ui.bigMap.follow = true; ui.bigMap.scale = Math.max(ui.bigMap.scale, 0.35); };
 $('#resumeBtn').onclick = closeOverlays;
-$('#leaveBtn').onclick = () => { radio.stop(); game.stop(); location.href = location.pathname; };
+$('#leaveBtn').onclick = () => { radio.stop(); game.stop(); keepAwake(false); location.href = location.pathname; };
+$('#mapClose').onclick = closeOverlays;
 
 function setupBigMap() {
-  ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true });
+  ui.bigMap = new MapView($('#bigMap'), game.world, { interactive: true, touch: IS_MOBILE });
   ui.bigMap.onSpot = (spot) => ui.showSpotCard(spot, game.bestTimes[spot.id], (s) => {
     game.setWaypointSpot(s);
     ui.toast(`Route set to ${s.name}.`);

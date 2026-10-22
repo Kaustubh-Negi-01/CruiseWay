@@ -61,7 +61,14 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Songs play in a small YouTube player in the bottom-left corner. YouTube's rules require the player to stay visible while it plays, so hiding it pauses the song. Drag it by its grip to any corner; it fades while you ride.
   - Recently played, suggestion chips (Chill, Lo-Fi, Driving, Synthwave and more), and a now-playing mini player with play/pause, next and volume. When a song ends, the next result plays. Videos whose owners don't allow embedding are skipped.
   - The zen music fades out while the radio plays.
-- **Controls:** keyboard, gamepad and on-screen touch controls.
+- **Controls:** keyboard, gamepad, and thumb controls on phones.
+- **On phones:**
+  - The game plays in landscape and full screen: the first tap anywhere switches to full screen and locks landscape. Holding the phone upright shows a "turn sideways" screen.
+  - **Add to Home Screen** installs it as an app that opens straight into full-screen landscape.
+  - **Controls:** drag on the left half to steer (analogue). GAS / BRAKE / DRIFT and WHEELIE sit on the right, a ⚡ button appears for Manhunt power-ups, and pause, camera, reset and vehicle buttons sit along the top.
+  - **Map:** tap the minimap for the big map. Pinch to zoom, drag to move, tap a spot for its card, and hold for half a second to drop a waypoint.
+  - **Extras:** starts on the Low graphics preset, vibrates on hits and tags (Android), and keeps the screen awake while you ride.
+  - **Radio:** it stays on PC, because its YouTube player needs a big box on screen. Play music from your phone's own music app instead; it mixes with the game.
 
 | Key | Action |
 | --- | --- |
@@ -179,6 +186,10 @@ src/
     sound.js               sound engine: riding sounds, impacts, race chimes, settings
     music.js               generative zen soundtrack
     weather.js             rain, wind and thunder sounds
+
+  mobile/
+    mobile.js              phone detection, full screen + landscape, haptics, screen wake
+    touchControls.js       thumb controls (analogue steering, pedals, buttons)
 
   ui/
     hud.js                 HUD, prompts, results, performance overlay

@@ -2,6 +2,22 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
+## 1.4 · Phones
+
+- **Landscape + full screen:**
+  - The first tap anywhere goes full screen and locks landscape (browsers need a tap before they allow full screen).
+  - Holding the phone upright shows a "turn your phone sideways" screen.
+  - New web app manifest and icons: Add to Home Screen opens CruiseWay full-screen in landscape with no browser bars.
+- **Thumb controls:**
+  - Drag on the left half of the screen for analogue steering.
+  - GAS, BRAKE (hold to reverse) and DRIFT on the right, plus WHEELIE on the bike and a ⚡ button when you have a Manhunt power-up.
+  - Pause, camera, reset and vehicle buttons along the top.
+  - Several fingers work at once.
+- **Map:** tap the minimap to open it. Pinch to zoom, drag to pan, tap spots, and long-press to drop a waypoint (quick taps never drop pins). A Close button was added.
+- **Compact HUD** for short landscape screens. The pause menu's Controls tab explains the touch controls.
+- **Phone extras:** Low graphics by default, vibration on hits, tags, checkpoints and power-ups (Android), and the screen stays awake while riding.
+- **The radio is PC-only:** its YouTube player needs a large visible box, and phones play music from their own apps alongside the game.
+
 ## 1.3 · Manhunt
 
 - **New mode, Manhunt:** tag with vehicles for 3+ riders. The 1-2 star race spots are now purple Manhunt arenas.

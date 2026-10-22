@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ArenaWall } from './arena.js';
+import { buzz } from '../mobile/mobile.js';
 
 // Manhunt: tag with vehicles, at the purple arena spots.
 //
@@ -203,9 +204,11 @@ export class Manhunt {
       if (msg.it === me && r.participant) {
         this.frozenUntil = now + HUNT.itFreeze * 1000;
         g.ui.flash(msg.by ? `TAGGED! You're IT` : `You're IT now`);
+        buzz(120);
         g.sound?.countdown('GO');
       } else if (msg.by === me) {
         g.ui.flash(`Tagged ${name(msg.it)}!`);
+        buzz(60);
         g.sound?.finish(false);
       } else {
         g.ui.toast(msg.by ? `${name(msg.by)} tagged ${name(msg.it)}` : `${name(msg.it)} is IT now`);
@@ -215,7 +218,8 @@ export class Manhunt {
       if (msg.to !== me || !r.participant) return;
       this.power = msg.kind;
       const p = POWERS[msg.kind];
-      g.ui.flash(`${p.icon} ${p.label} ready · press E`);
+      g.ui.flash(`${p.icon} ${p.label} ready · ${document.body.classList.contains('mobile') ? 'tap it' : 'press E'}`);
+      buzz(30);
       g.sound?.checkpoint();
     } else if (msg.t === 'hunt_shock') {
       this.ring(msg.x, msg.z);

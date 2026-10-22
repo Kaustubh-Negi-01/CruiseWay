@@ -71,7 +71,8 @@ function paint(canvas, world, terrain) {
 }
 
 export class MapView {
-  constructor(canvas, world, { interactive = false, rotate = false, round = false } = {}) {
+  constructor(canvas, world, { interactive = false, rotate = false, round = false, touch = false } = {}) {
+    this.touch = touch;   // phones: pinch to zoom, long-press to drop a waypoint
     this.cv = canvas;
     this.ctx = canvas.getContext('2d');
     this.world = world;
@@ -113,12 +114,63 @@ export class MapView {
       const r = cv.getBoundingClientRect();
       return [(e.clientX - r.left) * (cv.width / r.width), (e.clientY - r.top) * (cv.height / r.height)];
     };
-    cv.addEventListener('pointerdown', (e) => { drag = pt(e); moved = false; cv.setPointerCapture(e.pointerId); });
+    // phones: two fingers pinch-zoom about their midpoint; holding one
+    // finger still for half a second drops a waypoint (a quick tap only
+    // opens race spots, so panning never drops pins by accident)
+    const fingers = new Map();
+    let pinch = null, press = null;
+    const zoomAbout = (p, k) => {
+      const [wx, wz] = this.toWorld(p[0], p[1]);
+      this.scale = Math.min(2, Math.max(0.05, this.scale * k));
+      const [nx, nz] = this.toWorld(p[0], p[1]);
+      this.cx += wx - nx; this.cz += wz - nz;
+      this.follow = false;
+    };
+    if (this.touch) {
+      cv.style.touchAction = 'none';
+      cv.addEventListener('pointerdown', (e) => {
+        fingers.set(e.pointerId, pt(e));
+        clearTimeout(press);
+        if (fingers.size === 2) {
+          const [a, b] = [...fingers.values()];
+          pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) };
+          drag = null;
+        } else if (fingers.size === 1) {
+          const p = pt(e);
+          press = setTimeout(() => {
+            if (moved || fingers.size !== 1 || this.spotAt(p[0], p[1])) return;
+            moved = true;   // consumed: no tap on release
+            navigator.vibrate?.(30);
+            this.onPick?.(...this.toWorld(p[0], p[1]));
+          }, 500);
+        }
+      }, true);
+      cv.addEventListener('pointermove', (e) => {
+        if (!fingers.has(e.pointerId)) return;
+        fingers.set(e.pointerId, pt(e));
+        if (pinch && fingers.size === 2) {
+          const [a, b] = [...fingers.values()];
+          const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+          zoomAbout([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d / pinch.d);
+          pinch.d = d;
+          moved = true;
+          clearTimeout(press);
+        }
+      }, true);
+      const lift = (e) => {
+        fingers.delete(e.pointerId);
+        clearTimeout(press);
+        if (fingers.size < 2) pinch = null;
+      };
+      cv.addEventListener('pointerup', lift, true);
+      cv.addEventListener('pointercancel', lift, true);
+    }
+    cv.addEventListener('pointerdown', (e) => { if (pinch) return; drag = pt(e); moved = false; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener('pointermove', (e) => {
-      if (!drag) return;
+      if (!drag || pinch) return;
       const p = pt(e);
       const dx = p[0] - drag[0], dy = p[1] - drag[1];
-      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > (this.touch ? 10 : 4)) { moved = true; clearTimeout(press); }
       if (moved) {
         this.follow = false;
         this.cx += dx / this.scale;
@@ -131,7 +183,7 @@ export class MapView {
         const p = pt(e);
         const spot = this.spotAt(p[0], p[1]);
         if (spot && this.onSpot) this.onSpot(spot);
-        else if (this.onPick) this.onPick(...this.toWorld(p[0], p[1]));
+        else if (this.onPick && !this.touch) this.onPick(...this.toWorld(p[0], p[1]));
       }
       drag = null;
     });
@@ -151,7 +203,7 @@ export class MapView {
     for (const s of this.world.spots) {
       const p = s.route.at(s.startS);
       const [sx, sy] = this.toScreen(p.x, p.z);
-      if ((sx - px) ** 2 + (sy - py) ** 2 < 16 ** 2) return s;
+      if ((sx - px) ** 2 + (sy - py) ** 2 < (this.touch ? 30 : 16) ** 2) return s;   // fingers are bigger than cursors
     }
     return null;
   }
