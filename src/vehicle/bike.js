@@ -14,6 +14,7 @@ export const BIKE = {
   steer: 1.7, handbrakeGrip: 1.6,
   camDist: 5.0, camHeight: 1.7,
   rearZ: -0.88,      // rear axle position along the bike (wheelies pivot here)
+  contacts: [[0, 0.88], [0, -0.88]],   // tyre contact points (x across, z along)
 };
 
 // glow colours handed out to players in join order

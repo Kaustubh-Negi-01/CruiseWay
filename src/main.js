@@ -201,7 +201,8 @@ function renderGarage() {
     b.type = 'button';
     b.className = 'garage-item' + (game.vehicle === kind ? ' on' : '');
     const bar = (label, x) => `<div class="g-stat"><span>${label}</span><i style="--w:${Math.round(x * 100)}%"></i></div>`;
-    b.innerHTML = `<div class="g-head"><kbd>${i + 1}</kbd><b>${v.label}</b>${game.vehicle === kind ? '<em>riding</em>' : ''}</div>
+    const img = game.vehicleThumb(kind);
+    b.innerHTML = (img ? `<img class="g-img" src="${img}" alt="${v.label}">` : '') + `<div class="g-head"><kbd>${i + 1}</kbd><b>${v.label}</b>${game.vehicle === kind ? '<em>riding</em>' : ''}</div>
       <p>${v.blurb}</p>${bar('Top speed', v.stats.speed)}${bar('Acceleration', v.stats.accel)}${bar('Grip', v.stats.grip)}`;
     b.onclick = () => pickVehicle(kind);
     list.appendChild(b);

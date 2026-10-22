@@ -19,6 +19,8 @@ export const CAR = {
   wheelie: false,
   radius: 1.05,      // for tree collisions
   wheelR: 0.37,
+  // where the tyres touch the ground (x across, z along), so none sinks into a dip
+  contacts: [[-0.86, 1.42], [0.86, 1.42], [-0.86, -1.38], [0.86, -1.38]],
 };
 
 // driver's eye under the canopy, and the nose camera, in the car's frame
@@ -142,18 +144,20 @@ export function buildCar(color = '#38e8ff', number = '07') {
   const lean = new THREE.Group();
   root.add(lean);
 
-  // --- wheels: rears fixed, fronts on steering groups
+  // --- wheels: rears fixed, fronts on steering groups. They hang off the
+  // chassis (root), not the body, so body roll in corners doesn't tip them
+  // into the road.
   const wheels = [], steerers = [];
   for (const side of [-1, 1]) {
     const rw = wheel(mats, side);
     rw.group.position.set(side * TRACK, R, REAR);
-    lean.add(rw.group);
+    root.add(rw.group);
     wheels.push(rw.spin);
     const st = new THREE.Group();
     st.position.set(side * TRACK, R, FRONT);
     const fw = wheel(mats, side);
     st.add(fw.group);
-    lean.add(st);
+    root.add(st);
     wheels.push(fw.spin);
     steerers.push(st);
   }

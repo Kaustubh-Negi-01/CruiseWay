@@ -539,6 +539,62 @@ export class Game {
     return true;
   }
 
+  // A studio shot of a vehicle for the V menu, in the player's colour (cached).
+  // It's drawn into a corner of the game canvas and copied out straight away,
+  // so it needs no second WebGL context; the next frame paints over it.
+  vehicleThumb(kind, color = this.modelColor || COLORS[0]) {
+    const key = kind + color;
+    this.thumbs ||= {};
+    if (this.thumbs[key]) return this.thumbs[key];
+    const r = this.renderer, pr = r.getPixelRatio(), full = r.getSize(new THREE.Vector2());
+    const W = Math.min(480, Math.floor(full.x)), H = Math.round(W * 9 / 16);
+    if (W < 16 || H > full.y) return null;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x14171c);
+    scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2622, 1.5));
+    const keyLight = new THREE.DirectionalLight(0xfff1e0, 3.2);
+    keyLight.position.set(4, 6, 6);
+    const rim = new THREE.DirectionalLight(0x9fc4ff, 2.2);
+    rim.position.set(-5, 3, -5);
+    scene.add(keyLight, rim);
+    const model = vehicleFor(kind).build(color);
+    scene.add(model);
+    const box = new THREE.Box3().setFromObject(model);
+    const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    shadow.scale.set(size.x * 0.7, 1, size.z * 0.62);
+    shadow.position.set(centre.x, 0.005, centre.z);
+    scene.add(shadow);
+    // three-quarter view from the front right, framed to fit
+    const cam = new THREE.PerspectiveCamera(28, W / H, 0.1, 100);
+    const dir = new THREE.Vector3(1.15, 0.5, 1.25).normalize();
+    const dist = (size.length() / 2) / Math.sin(THREE.MathUtils.degToRad(28) / 2) * 0.62;
+    cam.position.copy(centre).addScaledVector(dir, dist);
+    cam.lookAt(centre.x, centre.y * 0.8, centre.z);
+
+    const exposure = r.toneMappingExposure;
+    r.toneMappingExposure = 1.05;
+    r.setScissorTest(true);
+    r.setViewport(0, 0, W, H);
+    r.setScissor(0, 0, W, H);
+    r.render(scene, cam);
+    const out = document.createElement('canvas');
+    out.width = Math.round(W * pr); out.height = Math.round(H * pr);
+    out.getContext('2d').drawImage(r.domElement, 0, r.domElement.height - out.height, out.width, out.height, 0, 0, out.width, out.height);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, full.x, full.y);
+    r.toneMappingExposure = exposure;
+
+    disposeModel(model);
+    shadow.geometry.dispose();
+    shadow.material.dispose();
+    return (this.thumbs[key] = out.toDataURL('image/jpeg', 0.9));
+  }
+
   // "Clear skies" setting: show sunny weather here regardless of the forecast.
   setClearSkies(on) {
     this.clearSkies = on;
