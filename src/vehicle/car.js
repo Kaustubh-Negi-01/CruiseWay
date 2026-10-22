@@ -91,21 +91,43 @@ function numberTexture(num, color) {
   return t;
 }
 
+// A solid tyre: a rounded cross-section (tread, shoulders, both sidewalls
+// down to the rim) spun around the axle. Shared by every car wheel.
+let TYRE = null;
+function tyreGeometry() {
+  if (TYRE) return TYRE;
+  const W = 0.17, ri = R * 0.66, c = 0.05;   // half width, rim radius, shoulder radius
+  const pts = [new THREE.Vector2(ri, -W)];
+  for (let i = 0; i <= 6; i++) {             // lower shoulder
+    const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2);
+    pts.push(new THREE.Vector2(R - c + Math.cos(a) * c, -W + c + Math.sin(a) * c));
+  }
+  for (let i = 0; i <= 6; i++) {             // upper shoulder
+    const a = (i / 6) * (Math.PI / 2);
+    pts.push(new THREE.Vector2(R - c + Math.cos(a) * c, W - c + Math.sin(a) * c));
+  }
+  pts.push(new THREE.Vector2(ri, W));
+  TYRE = new THREE.LatheGeometry(pts, 48).rotateZ(Math.PI / 2);   // axle along x
+  TYRE.userData.shared = true;
+  return TYRE;
+}
+
 // A turbine wheel: dark tyre with a glowing sidewall stripe, angled spokes
 // and a chrome lip. Mirrored for the left side.
 function wheel(mats, side) {
   const g = new THREE.Group();
   const spin = new THREE.Group();
-  const tyre = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.34, 40, 1, true).rotateZ(Math.PI / 2), mats.tyre);
-  const wall = new THREE.Mesh(new THREE.RingGeometry(R * 0.66, R, 40).rotateY(Math.PI / 2), mats.tyre);
-  wall.position.x = 0.17 * side;
+  const tyre = new THREE.Mesh(tyreGeometry(), mats.tyre);
+  // the inside face of the wheel (brake and hub area), so it can't be seen through
+  const inner = new THREE.Mesh(new THREE.CircleGeometry(R * 0.66, 32).rotateY(-side * Math.PI / 2), mats.rimDark);
+  inner.position.x = -0.12 * side;
   const stripe = new THREE.Mesh(new THREE.RingGeometry(R * 0.8, R * 0.84, 48).rotateY(Math.PI / 2), mats.glow);
-  stripe.position.x = 0.172 * side;
+  stripe.position.x = 0.174 * side;
   const lip = new THREE.Mesh(new THREE.TorusGeometry(R * 0.66, 0.012, 6, 40).rotateY(Math.PI / 2), mats.chrome);
   lip.position.x = 0.168 * side;
   const dish = new THREE.Mesh(new THREE.CircleGeometry(R * 0.66, 32).rotateY(side * Math.PI / 2), mats.rimDark);
   dish.position.x = 0.1 * side;
-  spin.add(tyre, wall, stripe, lip, dish);
+  spin.add(tyre, inner, stripe, lip, dish);
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
     const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.02, R * 0.56, 0.035), mats.graphite);

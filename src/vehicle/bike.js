@@ -401,7 +401,7 @@ export function disposeModel(root) {
   const seen = new Set();
   root.traverse((o) => {
     if (!o.isMesh) return;
-    o.geometry.dispose();
+    if (!o.geometry.userData.shared) o.geometry.dispose();   // shared shapes (car tyres) stay
     if (!seen.has(o.material)) {
       seen.add(o.material);
       const map = o.material.map;
