@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // closes off side roads. Where the route doubles back close to itself, the
 // wall pieces that would cut across the road are left out (and don't collide).
 
-const MARGIN = 2.8;        // metres beyond the road edge (room to run wide in bends)
+const MARGIN = 4.6;        // metres beyond the road edge (room to run wide in bends)
 const HEIGHT = 2.6;
 const PIECE = 48;          // samples per mesh (culled / faded by distance)
 const BIKE_HALF = 0.45;    // how close the bike's centre can get to a wall

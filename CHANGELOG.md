@@ -2,7 +2,18 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–1.7 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–1.8 on 23 October 2026.
+
+## 1.8 · Drive line and finish films · 23 Oct 2026
+
+- **Drive line, like Forza's assist.** Slim chevrons on the road along your race route (cutting to the inside of bends) or your GPS route, on both maps.
+  - Blue: keep going. Yellow: ease off. Red: brake now. Colours come from how fast each bend can be taken and how far you need to brake, compared with your speed.
+  - Turn it off in Esc → General.
+- **Wider race walls.** They now stand 4.6 m beyond the road edge (was 2.8 m), so there's more room to run wide.
+- **Finish films.** Cross the line and a short film plays full screen with its sound: the car version or the bike version, whichever you're riding.
+  - Skip, Space, Enter or Esc ends it.
+  - The ride sounds go quiet while it plays, and the results appear after it.
+  - Each film (about 5 MB) is only fetched once you're in a race.
 
 ## 1.7 · Hikari: a city you can find your way round · 23 Oct 2026
 

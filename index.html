@@ -119,6 +119,10 @@
     <div id="flash"></div>
     <div id="toasts"></div>
     <div id="warp"></div>
+    <div id="finishFx" class="hidden">
+      <video id="finishVideo" playsinline preload="none"></video>
+      <button id="finishSkip" type="button">Skip ▸</button>
+    </div>
     <div id="touch">
       <button data-t="left">◀</button><button data-t="right">▶</button>
       <button data-t="reset" class="sm">R</button>
@@ -179,6 +183,8 @@
       <section class="pane" data-pane="general">
         <div class="opt"><span>Weather</span><div class="chips" data-opt="weather"></div></div>
         <p class="hint">Live follows the world's shared forecast. Always sunny only changes your screen.</p>
+        <div class="opt"><span>Drive line</span><div class="chips" data-opt="driveLine"></div></div>
+        <p class="hint">Chevrons on the road along your race or GPS route: blue keep going, yellow ease off, red brake.</p>
       </section>
       <section class="pane hidden" data-pane="graphics">
         <div class="opt"><span>Graphics</span><div class="chips" data-opt="quality"></div></div>

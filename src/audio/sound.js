@@ -122,9 +122,15 @@ export class SoundManager {
     if (this.ctx) this.apply();
   }
 
+  // Nearly silent while something else has the stage (the race-finish film).
+  hush(on) {
+    this.hushed = on;
+    if (this.ctx) this.apply();
+  }
+
   apply() {
     const s = this.settings, t = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(s.master, t, 0.05);
+    this.master.gain.setTargetAtTime(s.master * (this.hushed ? 0.1 : 1), t, this.hushed ? 0.15 : 0.4);
     this.fx.gain.setTargetAtTime(s.effectsOn ? s.effects : 0, t, 0.05);
     this.musicBus.gain.setTargetAtTime(s.musicOn && !this.ducked ? s.music : 0, t, this.ducked ? 0.6 : 1.5);
     if (s.musicOn) this.music.start(); else this.music.stop();

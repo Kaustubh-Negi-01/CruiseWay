@@ -9,6 +9,7 @@ import { ghostify, disposeModel, PALETTE as COLORS, setBikeEnvironment, setBikeV
 import { vehicleFor } from '../vehicle/vehicles.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
+import { DriveLine, pathFromRoute, pathFromPoints } from '../race/driveLine.js';
 import { Manhunt, HUNT } from '../modes/manhunt.js';
 import { buzz } from '../mobile/mobile.js';
 import { City } from '../world/city/city.js';
@@ -91,6 +92,7 @@ export class Game {
     this.bestTimes = {};       // spot id -> best time this session
     this.vehicle = 'bike';     // 'bike' | 'car' (V to switch)
     this.map = 'island';       // 'island' | 'city': which world we're riding in
+    this.driveLineOn = true;   // chevrons along your race or GPS route (Esc > General)
     this.hunt = new Manhunt(this);
     addEventListener('resize', () => this.resize());
     this.resize();
@@ -337,6 +339,8 @@ export class Game {
     this.setModel(this.modelColor, true);
     if (to === 'city' && !this.bikeAsked) { this.bikeAsked = true; this.loadCityBike(); }
     this.hunt.moveTo(this.scene);
+    this.driveLine?.setScene(this.scene);
+    this.dlKey = null;
     this.nav = null;
     this.prompted = null;
     this.ui.closeSpotPrompt?.();
@@ -532,6 +536,8 @@ export class Game {
     this.loadWorld(seed, myColor);
     // world time + weather: the host rolls the weather key; guests take the host's clock
     const clock = this.isHost ? { tick: 0, key: Math.floor(Math.random() * 1e9) } : (welcome.clock || { tick: 0, key: 0 });
+    this.driveLine = new DriveLine(this.scene);
+    this.dlKey = null;
     this.climate = new Climate(seed, clock.key, clock.tick);
     if (this.clearSkies) this.climate.force('clear');
     this.cityWeather = new CityWeather(seed, clock.key);
@@ -596,6 +602,8 @@ export class Game {
 
   stop() {
     this.running = false;
+    this.driveLine?.dispose();
+    this.driveLine = null;
     clearTimeout(this.cityTimer);
     this.sound?.stopRide();
     this.sound?.weather(null);
@@ -655,6 +663,7 @@ export class Game {
     this.checkSpots();
     this.updateNav(now);
     this.updateGuidance(dt);
+    this.updateDriveLine();
     this.adaptResolution(dt, now);
 
     if (this.view === 'cockpit') updateDash(this.model, Math.abs(this.car.forwardSpeed) * 3.6, this.car.odometer / 1000, this.car.surface);
@@ -971,6 +980,31 @@ export class Game {
       rel = Math.atan2(Math.sin(d), Math.cos(d));
     }
     this.ui.guidance(state, rel, label);
+  }
+
+  // ---- drive line --------------------------------------------------------------
+
+  // Chevrons along the race route while you race, or along your GPS route
+  // while you have one set (see driveLine.js). A new path is only built
+  // when the route changes: once per race, every GPS update (1.5 s).
+  updateDriveLine() {
+    const dl = this.driveLine;
+    if (!dl) return;
+    const r = this.race, c = this.car;
+    const speed = Math.abs(c.forwardSpeed);
+    if (this.driveLineOn && r?.participant && r.mode !== 'hunt' && !r.finished) {
+      if (this.dlKey !== r.id) { this.dlKey = r.id; dl.setPath(pathFromRoute(r.spot.route, c.spec)); }
+      dl.update(c.pos, speed, r.phase === 'running' ? r.progressS : r.spot.startS);
+    } else if (this.driveLineOn && !r?.participant && this.nav?.gps) {
+      if (this.dlKey !== this.nav.gps) {
+        this.dlKey = this.nav.gps;
+        dl.setPath(pathFromPoints(this.nav.gps.pts, (x, z) => this.world.heightAt(x, z), c.spec));
+      }
+      dl.update(c.pos, speed);
+    } else if (this.dlKey) {
+      this.dlKey = null;
+      dl.setPath(null);
+    }
   }
 
   // ---- navigation (GPS) -----------------------------------------------------
@@ -1479,6 +1513,8 @@ export class Game {
       this.placeAt(p, Math.atan2(p.tx, p.tz));
       this.car.frozen = true;
       this.ui.toast(`${spot.name} · ${(spot.length / 1000).toFixed(1)} km — get ready`);
+      // the finish film for your ride, fetched while you race
+      if (spot.mode !== 'hunt') this.ui.preloadFinish?.(this.finishFilm());
       setTimeout(() => this.toHost({ t: 'race_ready', id: pub.id }), 600);
     } else {
       this.ui.toast(`A race is running at ${spot.name}.`);
@@ -1535,6 +1571,7 @@ export class Game {
     this.car.constraint = null;
     this.ui.flash('Finished · ' + fmtTime(r.elapsed));
     this.sound?.finish(false);
+    this.playFinishFilm();
     const best = this.bestTimes[r.spot.id];
     if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
     this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
@@ -1552,11 +1589,40 @@ export class Game {
     if (!r || !r.participant) return;
     if (msg.cancelled) this.ui.toast('The race was called off.');
     else if (msg.standings.length) {
-      if (msg.winner === this.selfId) this.sound?.finish(true);
-      this.ui.results(this.spotById(msg.spot), this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+      const show = () => {
+        if (msg.winner === this.selfId) this.sound?.finish(true);
+        this.ui.results(this.spotById(msg.spot), this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+      };
+      // the results wait until the finish film is over
+      if (this.filmPlaying) this.afterFilm = show;
+      else show();
     }
   }
 }
+
+// The race-finish film for the ride you're on (supplied by the project owner).
+Game.prototype.finishFilm = function () {
+  return this.vehicle === 'car' ? '/video/finish-car.mp4' : '/video/finish-bike.mp4';
+};
+
+// Over the line: the finish film plays full screen (skippable). The ride
+// sounds go quiet and your ride waits until it's over.
+Game.prototype.playFinishFilm = function () {
+  if (!this.ui.finishFx) return;
+  const s = this.sound?.settings;
+  const volume = s ? s.master * (s.effectsOn ? Math.max(0.35, s.effects) : 0) : 0.8;
+  this.sound?.hush(true);
+  this.car.frozen = true;
+  this.filmPlaying = true;
+  this.ui.finishFx(this.finishFilm(), volume, () => {
+    this.filmPlaying = false;
+    this.sound?.hush(false);
+    if (!this.race || this.race.finished) this.car.frozen = false;
+    const next = this.afterFilm;
+    this.afterFilm = null;
+    next?.();
+  });
+};
 
 export function fmtTime(t) {
   if (t == null) return '—';

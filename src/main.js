@@ -175,7 +175,7 @@ function enterGame({ net, seed, code, welcome }) {
 // Hidden while riding, like most games. It comes back by itself whenever a
 // menu, the map or a prompt is open, and Alt+C toggles it at any time.
 let cursorForced = false;
-const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt', '#radio', '#garage'];
+const cursorOverlays = ['#pause', '#mapOverlay', '#results', '#fatal', '#spotPrompt', '#radio', '#garage', '#finishFx'];
 function updateCursor() {
   const menuOpen = cursorOverlays.some((s) => !$(s).classList.contains('hidden'));
   document.body.classList.toggle('no-cursor', game.running && !menuOpen && !cursorForced);
@@ -342,6 +342,13 @@ game.setClearSkies(weatherPref === 'clear');
 chips($('[data-opt=weather]'), { live: 'Live', clear: 'Always sunny' }, weatherPref, (v) => {
   store.set('weather', v);
   game.setClearSkies(v === 'clear');
+});
+
+// drive line on the road (remembered per device)
+game.driveLineOn = store.get('driveLine') !== 'off';
+chips($('[data-opt=driveLine]'), { on: 'On', off: 'Off' }, game.driveLineOn ? 'on' : 'off', (v) => {
+  store.set('driveLine', v);
+  game.driveLineOn = v === 'on';
 });
 
 chips($('[data-opt=fps]'), { 30: '30 FPS', 60: '60 FPS', 0: 'Max' }, String(fpsCap), (v) => {
