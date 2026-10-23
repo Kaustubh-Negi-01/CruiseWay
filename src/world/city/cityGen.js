@@ -689,16 +689,37 @@ export const CITY_SPOT_BASE = 100;
 
 // One race and one Manhunt for the whole city.
 //
-// The Hikari Grand Circuit is a lap of everything: up the central avenue,
-// round the Loop, out through the Harbor, up onto the Skyway (ramp, bridges,
-// roof hops, jumps and the big drop), then the Circuit District and back
-// along the ring road. Its line is fully 3D, so the gates, walls and drive
-// line follow it up into the air.
+// The Hikari Grand Circuit takes a new route every race (see raceVariant):
+// from the flag on the south ring road through the streets to the west end
+// of the Skyway, over all of it (ramp, bridges, roof hops, jumps and the big
+// drop), and back through the streets to the flag. The route kept on the
+// spot itself (for the spot's beacon and its stats) is a lap of everything:
+// up the central avenue, round the Loop, out through the Harbor, the
+// Skyway, then the Circuit District and back along the ring road. Its line
+// is fully 3D, so the gates, walls and drive line follow it up into the air.
+const N = (L, i, j) => L.nodeAt(gx(i), gx(j)).id;
+const GRAND = { id: CITY_SPOT_BASE, name: 'Hikari Grand Circuit', mode: 'race', difficulty: 5, half: 12, shuffle: true };
+const VARIANT_KM = [3.3, 5.2];   // a random route is kept only if it's this long
+
 function makeSpots(L) {
   const net = L.net;
-  const N = (i, j) => L.nodeAt(gx(i), gx(j)).id;
   const W = (x, z) => L.nodeAt(x, z).id;
-  const pts = [];   // [x, y, z, half]
+  const start = N(L, 5, 0);
+  const route = circuitRoute(L,
+    [start, N(L, 5, 1), N(L, 5, 2), N(L, 4, 2), N(L, 4, 3), N(L, 3, 3), N(L, 3, 4), N(L, 3, 5), N(L, 2, 5), N(L, 1, 5), N(L, 0, 5), W(-600, 0), W(-600, 176), N(L, 0, 7), N(L, 1, 7), N(L, 1, 8)],
+    [N(L, 9, 8), N(L, 9, 7), N(L, 9, 6), N(L, 9, 5), N(L, 10, 5), W(600, 0), W(600, -176), N(L, 10, 3), N(L, 10, 2), N(L, 10, 1), N(L, 10, 0), N(L, 9, 0), N(L, 8, 0), N(L, 7, 0), N(L, 6, 0), start]);
+  const race = finishSpot(route, { ...GRAND, node: start });
+  const huntSteps = net.stepsThrough([N(L, 5, 5), N(L, 6, 5)]);
+  const hunt = finishSpot(new Route(net, huntSteps), {
+    id: CITY_SPOT_BASE + 1, node: N(L, 5, 5), steps: huntSteps, name: 'Scramble Square', mode: 'hunt', difficulty: 1, half: 12,
+  });
+  return [race, hunt];
+}
+
+// The race line: through the streets (crossing ids) to the Skyway's west
+// end, along the Skyway, and from its east end through the streets again.
+function circuitRoute(L, before, after) {
+  const net = L.net, pts = [];   // [x, y, z, half]
   const nodes = (ids) => {
     for (const [id, fwd] of net.stepsThrough(ids)) {
       const e = net.edges[id];
@@ -708,23 +729,90 @@ function makeSpots(L) {
       }
     }
   };
-  const start = N(5, 0);
-  nodes([start, N(5, 1), N(5, 2), N(4, 2), N(4, 3), N(3, 3), N(3, 4), N(3, 5), N(2, 5), N(1, 5), N(0, 5), W(-600, 0), W(-600, 176), N(0, 7), N(1, 7), N(1, 8)]);
+  nodes(before);
   // off the street and onto the Skyway
   const wx = gx(1), ex = gx(9), SH = 0.4;   // on the Skyway the walls stand at the deck edges
   pts.push([wx, 0, SKY_Z - 16, 6], [wx + 2, 0, SKY_Z - 6, 6], [wx + 8, CITY.kerb, SKY_Z, SH]);
   for (const [x, y] of L.skyLine) pts.push([x, y, SKY_Z, SH]);
   // off the landing plaza and back down to the street
   pts.push([ex - 8, 0, SKY_Z, 6], [ex - 2, 0, SKY_Z - 6, 6], [ex, 0, SKY_Z - 16, 6]);
-  nodes([N(9, 8), N(9, 7), N(9, 6), N(9, 5), N(10, 5), W(600, 0), W(600, -176), N(10, 3), N(10, 2), N(10, 1), N(10, 0), N(9, 0), N(8, 0), N(7, 0), N(6, 0), start]);
-  const race = finishSpot(polylineRoute(pts), {
-    id: CITY_SPOT_BASE, node: start, name: 'Hikari Grand Circuit', mode: 'race', difficulty: 5, half: 12,
-  });
-  const huntSteps = net.stepsThrough([N(5, 5), N(6, 5)]);
-  const hunt = finishSpot(new Route(net, huntSteps), {
-    id: CITY_SPOT_BASE + 1, node: N(5, 5), steps: huntSteps, name: 'Scramble Square', mode: 'hunt', difficulty: 1, half: 12,
-  });
-  return [race, hunt];
+  nodes(after);
+  return polylineRoute(pts);
+}
+
+// A new Grand Circuit for one race, from a number the host picks, so every
+// rider builds the same one. The Skyway stays in the middle; the streets to
+// it and back are new each time. Each leg heads for a random crossing (one
+// or two) and then on, along the cheapest way with every street priced at
+// random, wide streets cheaper and turns costing extra so it flows. A route
+// never passes the same crossing twice, and stays off the streets that run
+// under the Skyway (and the bits its ends use). Same spot id, name and flag.
+export function raceVariant(L, seed) {
+  const rand = mulberry32((seed >>> 0) || 1);
+  const net = L.net, start = N(L, 5, 0), entry = N(L, 1, 8), exit = N(L, 9, 8);
+  const between = (a, b) => net.nodes[a].edges.find((e) => net.edges[e].a === b || net.edges[e].b === b);
+  const banned = new Set();
+  for (let i = 1; i <= 9; i++) banned.add(between(N(L, i, 8), N(L, i, 9)));
+  const candidates = net.nodes.filter((n) => ![start, entry, exit].includes(n.id) && net.nodes[n.id].edges.length >= 2).map((n) => n.id);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const cost = net.edges.map((e) => e.length * (0.55 + rand() * 1.1) * (e.half >= 9 ? 0.75 : 1));
+    const turn = 40 + rand() * 80;
+    const used = new Set([start, exit]);
+    const leg = (from, stops) => {
+      const path = [from];
+      for (const to of stops) {
+        if (to !== stops[stops.length - 1] && used.has(to)) continue;   // a stop we've already been through
+        const p = cheapestPath(net, path[path.length - 1], to, path.length > 1 ? path[path.length - 2] : -1, used, banned, cost, turn);
+        if (!p) return null;
+        for (const id of p.slice(1)) { path.push(id); used.add(id); }
+      }
+      return path;
+    };
+    const pick = () => candidates[Math.floor(rand() * candidates.length)];
+    const a = leg(start, [...(rand() < 0.35 ? [pick(), pick()] : [pick()]), entry]);
+    if (!a) continue;
+    const b = leg(exit, [...(rand() < 0.35 ? [pick(), pick()] : [pick()]), start]);
+    if (!b) continue;
+    const route = circuitRoute(L, a, b);
+    if (route.length < VARIANT_KM[0] * 1000 || route.length > VARIANT_KM[1] * 1000) continue;
+    return finishSpot(route, { ...GRAND, node: start, variant: seed });
+  }
+  return L.spots[0];   // (very unlikely) no luck: the usual route
+}
+
+// Cheapest way from one crossing to another, not through `used` ones (the
+// target aside), never along a `banned` street, with a cost for each turn
+// (and no U-turn at the start, given where we came from). Crossing ids or null.
+function cheapestPath(net, from, to, cameFrom, used, banned, cost, turn) {
+  const key = (n, p) => n * 4096 + (p + 1);
+  const dist = new Map([[key(from, cameFrom), 0]]), prev = new Map();
+  const open = [[0, from, cameFrom]];
+  const dir = (a, b) => { const A = net.nodes[a], B = net.nodes[b], l = Math.hypot(B.x - A.x, B.z - A.z) || 1; return [(B.x - A.x) / l, (B.z - A.z) / l]; };
+  while (open.length) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
+    const [d, n, p] = open[bi];
+    open[bi] = open[open.length - 1]; open.pop();
+    if (d > (dist.get(key(n, p)) ?? Infinity)) continue;
+    if (n === to) {
+      const out = [n];
+      for (let k = key(n, p); prev.has(k);) { const [pn, pp] = prev.get(k); out.push(pn); k = key(pn, pp); }
+      return out.reverse();
+    }
+    for (const eid of net.nodes[n].edges) {
+      if (banned.has(eid)) continue;
+      const e = net.edges[eid], m = e.a === n ? e.b : e.a;
+      if (m === p || (m !== to && used.has(m))) continue;
+      let c = d + cost[eid];
+      if (p >= 0) {
+        const [ax, az] = dir(p, n), [bx, bz] = dir(n, m);
+        if (ax * bx + az * bz < 0.7) c += turn;
+      }
+      const k = key(m, n);
+      if (c < (dist.get(k) ?? Infinity)) { dist.set(k, c); prev.set(k, [n, p]); open.push([c, m, n]); }
+    }
+  }
+  return null;
 }
 
 function finishSpot(route, o) {

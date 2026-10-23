@@ -48,7 +48,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Damp streets with faint reflections, and the city's own weather (drizzle, rain, fog, the odd thunderstorm).
   - **The Skyway:** a rooftop parkour line across the north row of blocks, about 0.7 km long and up to 23 m up. Glowing hard-light ramps climb from the street, bridges span the streets between roofs, pink launch lips throw you across gaps, and it ends with a 20 m drop back to the street.
   - One race and one Manhunt arena, each with a single flag:
-    - **Hikari Grand Circuit** (about 3.9 km): the central avenue, round the Loop, out through the Harbor, over the whole Skyway, then the Circuit District and home along the ring road. Its gates, walls and drive line follow it up into the air. Fall off the Skyway and you're put back on it, a short run-up before where you fell.
+    - **Hikari Grand Circuit** (3–5 km): a new route every race. It runs from the flag through the streets to the Skyway, over all of it, and back to the flag by other streets, never through the same crossing twice. The host picks the route as the race starts, and every rider gets the same one. Its gates, walls and drive line follow it up into the air. Fall off the Skyway and you're put back on it, a short run-up before where you fell. (No best time is kept, since the route changes.)
     - **Scramble Square** (Manhunt).
   - Buildings are solid, and the map, GPS and R reset all work there.
   - In the city your bike takes on a cyberpunk look (same handling), with a live speedo on its screen in first person.
@@ -78,6 +78,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Checkpoints count in order.
   - <kbd>R</kbd> takes you back to your last checkpoint (in Hikari, to a short run-up before where you got to).
   - Results at the end, and the session leaderboard counts wins.
+  - The leaderboard (riders and their wins, top left) is hidden while you ride. <kbd>Tab</kbd> shows and hides it. When a race or a Manhunt round ends, it shows for a few seconds and then slowly fades away.
 - **Sound:**
   - The bike uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
   - The hypercar uses its own recording, played as overlapping slices so it never audibly loops. It's softened by a gentle filter, follows the revs through a seven-speed gearbox, and swells in from quiet as you pull away.
@@ -109,6 +110,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | V | Choose your vehicle: superbike or hypercar |
 | E | Manhunt: use the IT's power-up |
 | M | Map |
+| Tab | Show / hide the leaderboard |
 | Q | Radio |
 | Enter / Backspace | Accept / dismiss a race prompt |
 | Alt + C | Show / hide the mouse cursor (hidden while riding) |

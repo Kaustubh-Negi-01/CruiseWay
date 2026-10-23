@@ -116,6 +116,30 @@ export class UI {
 
   setWorldCode(code) { $('#worldCode').textContent = code; }
 
+  // The riders' leaderboard (top left) stays out of the way while you ride.
+  // Tab shows it and hides it again. When a race or a Manhunt round ends it
+  // shows by itself for a few seconds, then slowly fades away.
+  toggleBoard() {
+    this.boardPinned = !this.boardPinned;
+    clearTimeout(this.boardTimer);
+    const el = $('#roster');
+    el.classList.remove('fading');
+    el.classList.toggle('show', this.boardPinned);
+  }
+
+  flashBoard(hold = 4000, fade = 3000) {
+    if (this.boardPinned) return;
+    clearTimeout(this.boardTimer);
+    const el = $('#roster');
+    el.classList.remove('fading');
+    el.classList.add('show');
+    el.style.setProperty('--board-fade', fade + 'ms');
+    this.boardTimer = setTimeout(() => {
+      el.classList.add('fading');
+      this.boardTimer = setTimeout(() => el.classList.remove('show', 'fading'), fade);
+    }, hold);
+  }
+
   setRoster(list, selfId, hostId) {
     const rows = list
       .slice()
@@ -213,7 +237,9 @@ export class UI {
     $('#spName').textContent = spot.name;
     $('#spMeta').innerHTML = hunt
       ? `${diffChip(spot)}<span class="chip">${HUNT.minPlayers}+ riders</span><span class="chip">tag with vehicles</span><span class="chip">shrinking zone</span>`
-      : `${diffChip(spot)}<span class="chip">${km(spot.length)}</span>`
+      : spot.shuffle
+        ? `${diffChip(spot)}<span class="chip">new route every race</span><span class="chip">3–5 km</span><span class="chip">over the Skyway</span>`
+        : `${diffChip(spot)}<span class="chip">${km(spot.length)}</span>`
       + `<span class="chip">${Math.round(spot.dirtFrac * 100)}% dirt</span>`
       + `<span class="chip">${Math.round(spot.climb)} m climb</span>`
       + (best != null ? `<span class="chip">best ${fmtTime(best)}</span>` : '');
@@ -271,6 +297,22 @@ export class UI {
       return;
     }
     const d = DIFFICULTY[spot.difficulty];
+    if (spot.shuffle) {
+      el.innerHTML = `
+        <div class="sp-kicker">RACE SPOT</div>
+        <h3>${esc(spot.name)}</h3>
+        <div class="stars" style="color:${d.color}">${stars(spot.difficulty)} <span style="color:var(--ink);font-size:14px">${d.label}</span></div>
+        <p class="hint">A new route every race: through the streets to the Skyway, across the rooftops (ramps, bridges, jumps and a 20 m drop), and back through the streets to the flag.</p>
+        <dl>
+          <dt>Distance</dt><dd>3–5 km</dd>
+          <dt>Checkpoints</dt><dd>${spot.checkpoints.length}</dd>
+        </dl>
+        <div class="row"><button class="btn small" id="cardClose">Close</button><button class="btn small primary" id="cardRoute">Set route</button></div>`;
+      el.classList.remove('hidden');
+      $('#cardClose').onclick = () => this.showSpotCard(null);
+      $('#cardRoute').onclick = () => onRoute(spot);
+      return;
+    }
     const pct = (v) => `<div class="bar"><i style="width:${Math.round(Math.min(1, v) * 100)}%;background:${d.color}"></i></div>`;
     el.innerHTML = `
       <div class="sp-kicker">RACE SPOT</div>
@@ -388,6 +430,7 @@ export class UI {
     $('#resultsTitle').textContent = won ? '🏆 You got away!' : '🎯 You were IT at the end';
     $('#resultsSub').textContent = `Manhunt · ${spot.name}`;
     const secs = (ms) => `${Math.floor(ms / 60000)}:${String(Math.round(ms / 1000) % 60).padStart(2, '0')}`;
+    this.flashBoard();
     $('#resultsList').innerHTML = rows.map((s) => `<li class="${s.lost ? 'lost' : ''}"><span class="pos">${s.lost ? '✗' : '✓'}</span>
       <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}${s.me ? ' (you)' : ''}${s.left ? ' · left' : ''}</span>
       <span class="t">IT ${secs(s.itMs)} · ${s.tags} tag${s.tags === 1 ? '' : 's'}</span></li>`).join('');
@@ -396,6 +439,7 @@ export class UI {
   }
 
   results(spot, list, iWon, solo) {
+    this.flashBoard();
     $('#resultsTitle').textContent = solo ? 'Run complete' : iWon ? '🏆 You won!' : 'Race results';
     $('#resultsSub').textContent = `${spot.name} · ${km(spot.length)} · ${DIFFICULTY[spot.difficulty].label}`;
     $('#resultsList').innerHTML = list.map((s, i) => `<li><span class="pos">${i + 1}</span>

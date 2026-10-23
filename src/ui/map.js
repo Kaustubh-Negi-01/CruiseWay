@@ -246,7 +246,7 @@ export class MapView {
     ctx.restore();
 
     // race route or selected spot's route
-    const routeSpot = o.race || o.selected;
+    const routeSpot = o.race || (o.selected?.shuffle ? null : o.selected);   // (a new route every race: nothing to show yet)
     if (routeSpot) this.polyline(routeSpot.route, '#ffcf3a', Math.max(3, 5 * Math.min(1, this.scale * 4)), 0.9, o.race ? o.raceFrom || 0 : 0);
     // GPS
     if (o.gps) this.path(o.gps.pts, '#38e8ff', Math.max(3.5, 6 * Math.min(1, this.scale * 4)));
