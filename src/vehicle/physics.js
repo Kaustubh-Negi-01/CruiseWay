@@ -213,7 +213,16 @@ export class Bike {
     }
 
     let grip = this.surface === 1 ? s.grip : this.surface === 2 ? s.dirtGrip : s.offGrip;
-    if (input.handbrake) { grip = s.handbrakeGrip; vf -= vf * 0.5 * dt; }
+    // Car at speed: the handbrake kicks the tail out into a drift you hold
+    // with the steering, losing little speed; grip comes back gradually as
+    // you let go. Otherwise (bike, or slow) it's a sliding rear brake.
+    const drifting = s.wheelie === false && input.handbrake && vf > 12 && Math.abs(input.steer) > 0.15;
+    this.drift = Math.max(0, Math.min(1, (this.drift || 0) + (drifting ? dt * 4 : -dt * 1.6)));
+    if (this.drift > 0) {
+      grip = grip + ((s.driftGrip ?? 0.9) - grip) * this.drift;
+      vf -= vf * 0.09 * this.drift * dt;
+    }
+    if (input.handbrake && !drifting) { grip = Math.min(grip, s.handbrakeGrip); vf -= vf * 0.5 * dt; }
     if (w.active) grip *= 0.8;
     grip *= this.world.gripScale ?? 1;   // wet roads and snow
     vl *= Math.exp(-grip * traction * dt);
@@ -222,7 +231,7 @@ export class Bike {
 
     const sp = Math.abs(vf);
     const steerAmt = this.steer * s.steer * Math.min(1, sp / 3) / (1 + sp / 36) * (w.active ? 0.2 : 1);
-    let target = steerAmt * Math.sign(vf) * (input.handbrake ? 1.3 : 1);
+    let target = steerAmt * Math.sign(vf) * (input.handbrake ? 1.3 : 1) * (1 + (this.drift || 0) * 0.6);
     if (w.active) {
       // balancing on the back wheel: a wandering tug you have to correct
       const t = w.t;
@@ -234,6 +243,13 @@ export class Bike {
     const nfx = Math.sin(this.yaw), nfz = Math.cos(this.yaw);
     this.vel.x = nfx * vf + nfz * vl;
     this.vel.z = nfz * vf - nfx * vl;
+    if (this.drift > 0) {
+      // in a drift the car keeps going where it was heading while the body
+      // swings round; the (low) side grip then pulls the path round after it
+      const m = this.drift * 0.7;
+      this.vel.x += (fx * vf + fz * vl - this.vel.x) * m;
+      this.vel.z += (fz * vf - fx * vl - this.vel.z) * m;
+    }
 
     if (this.onGround && !parked) {
       const n = this.normal;
@@ -395,6 +411,7 @@ export class Bike {
       w: r(this.wheelie.angle),
       st: r(this.steer),
       v: r(this.forwardSpeed),
+      u: [r(this.vel.x), r(this.vel.y), r(this.vel.z)],   // velocity, so others can predict where you are
     };
   }
 }

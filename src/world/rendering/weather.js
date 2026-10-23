@@ -58,8 +58,9 @@ export class WeatherFX {
       ru.uTime.value = this.time;
       ru.uAmount.value = Math.min(1, w.rain);
       ru.uFall.value.set(windX, -(20 + w.storm * 6), windZ);
-      // streak = motion relative to the camera over ~a 30 ms exposure
-      ru.uTail.value.copy(ru.uFall.value).sub(this.camVel).multiplyScalar(0.042);
+      // streaks follow the fall (and the wind), not your own speed: rain
+      // that rushed at the camera looked like warp speed, not weather
+      ru.uTail.value.copy(ru.uFall.value).multiplyScalar(0.045);
       ru.uColor.value.setRGB(0.8, 0.84, 0.92).multiplyScalar(0.3 + light * 0.7);
       ru.uOpacity.value = 0.45 + w.storm * 0.15;
       ru.uLamp.value = lamp;
@@ -177,7 +178,8 @@ function makeRain(count) {
         vec3 side = normalize(cross(tail - head, head - cameraPosition)) * 0.009;
         vec3 p = mix(head, tail, position.y) + side * position.x;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-        vA = on * (1.0 - smoothstep(8.0, 30.0, distance(head, uCam))) * mix(1.0, 0.1, position.y);
+        // (drops right at the lens are faded out)
+        vA = on * (1.0 - smoothstep(8.0, 30.0, distance(head, uCam))) * smoothstep(1.2, 3.5, distance(head, cameraPosition)) * mix(1.0, 0.1, position.y);
         vX = position.x;
         vLit = uLamp * (1.0 - smoothstep(2.0, 16.0, distance(head, uCam)));
         if (on < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);

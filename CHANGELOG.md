@@ -4,6 +4,14 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
 0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–1.8 on 23 October 2026.
 
+## 1.9 · Theme song, smoother rivals, drifting · 23 Oct 2026
+
+- **Theme song.** CruiseWay's theme ("Apex Pursuit", supplied by the project owner) plays on the menus: while you type your name, create or join a world, and load. It fades away over a couple of seconds as the ride begins. (Browsers only allow sound after your first tap or key press, so it may start then.)
+- **Nothing else on show in a race or a Manhunt.** The other flags and the portals vanish from the world, the minimap and the map, and come back when it's over.
+- **Smoother rivals.** Other riders are drawn where they are now, not 140 ms ago: every update carries their velocity, so their ghost keeps moving between updates (a touch ahead, to make up for the network delay) and small corrections blend in. Updates go out 20 times a second (was 15). In a race you can see who's really in front.
+- **Drifting.** In the car at speed, handbrake (Space) plus steering throws the tail out into a drift: about 25° sideways at full lock, keeping most of your speed, with grip coming back as you let go. On the bike, or slow, Space is still the sliding rear brake.
+- **Rain falls like rain.** Drops fall straight down, or slanted with the wind, instead of streaking at the screen when you're going fast. Drops right at the lens are faded out.
+
 ## 1.8 · Drive line and finish films · 23 Oct 2026
 
 - **Drive line, like Forza's assist.** Slim chevrons on the road along your race route (cutting to the inside of bends) or your GPS route, on both maps.
