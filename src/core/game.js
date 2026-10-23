@@ -454,7 +454,7 @@ export class Game {
   }
 
   placeAt(p, yaw) {
-    this.car.place(p.x, p.z, yaw);
+    this.car.place(p.x, p.z, yaw, p.y);
     this.camPos = null;
     if (this.barriers) this.wallS = this.barriers.route.nearestS(p.x, p.z, 0, 1e6, 0).s;
     // a teleport isn't "riding the wrong way": restart the guidance
@@ -623,7 +623,17 @@ export class Game {
     const r = this.race;
     if (r && r.participant && r.mode !== 'hunt') {
       if (r.phase !== 'running' || r.finished) return;
-      const s = r.next > 0 ? r.spot.checkpoints[r.next - 1] : r.spot.startS;
+      let s = r.next > 0 ? r.spot.checkpoints[r.next - 1] : r.spot.startS;
+      // in Hikari: back a little before where you got to (a fall off the
+      // Skyway shouldn't cost a whole lap section), on a stretch with ground
+      // under it rather than mid-jump, and with a run-up for the next gap
+      if (r.spot.city) {
+        s = Math.max(s, r.progressS - 70);
+        for (let i = 0; i < 40 && s > r.spot.startS; i++, s -= 6) {
+          const q = r.spot.route.at(s);
+          if (Math.abs(this.world.groundAt(q.x, q.y + 0.4, q.z) - q.y) < 0.6) break;
+        }
+      }
       const p = r.spot.route.at(s);
       this.placeAt(p, Math.atan2(p.tx, p.tz));
       return;
@@ -926,12 +936,12 @@ export class Game {
     this.camPos.x = bx - fx * s.camDist * far;
     this.camPos.z = bz - fz * s.camDist * far;
     this.camPos.y += (wantY - this.camPos.y) * k(7);
-    const ground = this.world.heightAt(this.camPos.x, this.camPos.z) + 0.55;
+    const ground = (this.world.groundAt ? this.world.groundAt(this.camPos.x, this.camPos.y, this.camPos.z) : this.world.heightAt(this.camPos.x, this.camPos.z)) + 0.55;
     if (this.camPos.y < ground) this.camPos.y += (ground - this.camPos.y) * k(25);
     this.camera.position.copy(this.camPos);
     // between buildings: pull in rather than look through a wall
     if (this.world.rayBlock) {
-      const t = this.world.rayBlock(bx, bz, this.camPos.x, this.camPos.z);
+      const t = this.world.rayBlock(bx, bz, this.camPos.x, this.camPos.z, Math.min(by, this.camPos.y));
       const want = t < 1 ? Math.max(0.15, t - 0.08) : 1;
       this.camPull = this.camPull == null ? want : this.camPull + (want - this.camPull) * k(want < this.camPull ? 25 : 3);
       this.camera.position.x = bx + (this.camPos.x - bx) * this.camPull;
@@ -967,8 +977,18 @@ export class Game {
         const g = route.nearestS(c.pos.x, c.pos.z, route.length / 2, route.length, 0);
         if (g.d < 20 && g.s > r.progressS) q = g;
       }
-      const onRoute = q.d < 20;
+      // (in 3D: riding on the street under the Skyway isn't being on it)
+      const ry = route.at(q.s).y, below = ry - c.pos.y;
+      const onRoute = q.d < 20 && Math.abs(below) < 6;
       if (onRoute && q.s > r.progressS) r.progressS = q.s;
+      // fell off it: put back up after a moment
+      r.fallen = r.spot.city && below > 6 && q.d < 40 && c.onGround ? (r.fallen || 0) + dt : 0;
+      if (r.fallen > 1.2) {
+        r.fallen = 0;
+        this.ui.toast('Back up on the Skyway');
+        this.resetCar();
+        return;
+      }
       const against = onRoute && sp > 4 && vx * q.tx + vz * q.tz < -0.35;
       r.wrongWay = against ? r.wrongWay + dt : Math.max(0, r.wrongWay - dt * 2.5);
       if (r.wrongWay > 0.7) { state = 'wrongway'; aim = route.at(Math.max(q.s, r.progressS) + 40); label = "You're riding the wrong way"; }
@@ -1568,8 +1588,9 @@ export class Game {
     const px = this.car.pos.x, pz = this.car.pos.z;
     // gates count in order: the barriers keep racers on the route
     const tgt = r.next < cps.length ? route.at(cps[r.next]) : route.at(route.length - 1);
+    // gates count in 3D: one up on the Skyway isn't reached from the street under it
     r.distToNext = Math.hypot(tgt.x - px, tgt.z - pz);
-    if (r.distToNext >= CP_RADIUS) return;
+    if (r.distToNext >= CP_RADIUS || Math.abs(tgt.y - this.car.pos.y) > 8) return;
     if (r.next < cps.length) {
       r.next++;
       r.progressS = Math.max(r.progressS, cps[r.next - 1]);

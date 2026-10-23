@@ -159,6 +159,8 @@ export class RaceBarriers {
     this.lastS = q.s;
     const i = Math.min(r.n - 1, Math.max(0, r.indexAt(q.s)));
     const p = r.at(q.s);
+    // well above or below the route (fallen off the Skyway): the walls aren't where you are
+    if (Math.abs(pos.y - p.y) > 6) return 0;
     // which side of the centre line are we on?
     const side = (pos.x - p.x) * this.nx[i] + (pos.z - p.z) * this.nz[i] >= 0 ? 0 : 1;
     if (!this.wall[side][i]) return 0;

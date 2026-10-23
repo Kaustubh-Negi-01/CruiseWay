@@ -6,6 +6,7 @@ const G = 16;
 const FIXED = 1 / 120;
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
 const _lean = new THREE.Quaternion(), _axis = new THREE.Vector3(), _p = new THREE.Vector3();
+const _e = new THREE.Euler(), _q2 = new THREE.Quaternion();
 
 // Wheelies: hold the wheelie key above minSpeed. The meter drains while the
 // front is up and recharges after a short rest. Steering is much weaker and
@@ -82,8 +83,10 @@ export class Bike {
   get speed() { return Math.hypot(this.vel.x, this.vel.z); }
   get forwardSpeed() { return this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw); }
 
-  place(x, z, yaw) {
-    const y = this.world.heightAt(x, z);
+  // yHint: put it on the surface near that height (a checkpoint up on the
+  // Skyway), not on the street under it
+  place(x, z, yaw, yHint = null) {
+    const y = yHint != null && this.world.groundAt ? this.world.groundAt(x, yHint + 0.5, z) : this.world.heightAt(x, z);
     this.pos.set(x, y, z);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
@@ -104,6 +107,13 @@ export class Bike {
     if (this.wheelie) { this.wheelie.active = false; this.wheelie.angle = 0; }
     this.prevYaw = this.renderYaw = yaw;
     this.acc = 0;
+    this.airPitch = this.airRoll = this.trajPitch = this.squash = 0;
+  }
+
+  // Height of the ground under (x, z) for something at height y: on the
+  // island just the terrain; in the city also roofs and hard-light decks.
+  ground(x, z, y) {
+    return this.world.groundAt ? this.world.groundAt(x, y, z) : this.world.heightAt(x, z);
   }
 
   update(dt, input) {
@@ -129,11 +139,15 @@ export class Bike {
       this.groundVy += (vy - this.groundVy) * (1 - Math.exp(-dt * 30));
     }
     this.prevY = gy;
-    const k = 220, c = 2 * Math.sqrt(k);
+    // heavier damping for a while after a big landing, so a 20 m drop
+    // squats and settles once instead of bouncing
+    const k = 220, c = 2 * Math.sqrt(k) * (1 + Math.min(1.5, this.squash * 6));
     this.bodyVy += ((gy - this.bodyY) * k + (this.groundVy - this.bodyVy) * c) * dt;
     this.bodyY += this.bodyVy * dt;
-    // never sit below the road surface, and never float far above it
-    if (this.bodyY < gy - 0.01) { this.bodyY = gy - 0.01; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
+    // never sit below the road surface (except the squat of a hard landing),
+    // and never float far above it
+    this.squash = Math.max(0, (this.squash || 0) - dt * 0.8);
+    if (this.bodyY < gy - 0.01 - this.squash) { this.bodyY = gy - 0.01 - this.squash; this.bodyVy = Math.max(this.bodyVy, this.groundVy); }
     // Road meshes are drawn 3 cm above the ground they follow (junction pads
     // 6 cm), so on a road the tyres ride a little higher to sit on the
     // tarmac rather than in it. Eased, so crossing onto grass isn't a step.
@@ -146,7 +160,7 @@ export class Bike {
     for (const [sx, sz] of this.spec.contacts || []) {
       const dx = fz * sx + fx * sz, dz = -fx * sx + fz * sz;
       const plane = gy - (n.x * dx + n.z * dz) / n.y;
-      fit = Math.max(fit, this.world.heightAt(this.renderPos.x + dx, this.renderPos.z + dz) - plane);
+      fit = Math.max(fit, this.ground(this.renderPos.x + dx, this.renderPos.z + dz, gy + 0.3) - plane);
     }
     this.groundFit += (Math.min(fit, 0.4) - this.groundFit) * (1 - Math.exp(-dt * 20));
     if (this.bodyY > gy + 0.35) this.bodyY = gy + 0.35;
@@ -162,6 +176,11 @@ export class Bike {
     const w = this.wheelie;
     const lift = w.active ? WHEELIE.angle + 0.05 * Math.sin(w.t * 3.1) : 0;
     w.angle += (lift - w.angle) * (1 - Math.exp(-dt * (w.active ? 4 : 7)));
+    // back on the ground: any mid-air pitch and roll settles out
+    if (this.onGround) {
+      const settle = Math.exp(-dt * 9);
+      this.airPitch *= settle; this.airRoll *= settle; this.trajPitch *= settle;
+    }
   }
 
   step(dt, input) {
@@ -276,7 +295,7 @@ export class Bike {
       if (hit > 0.5) this.onImpact?.('wall', hit);
     }
 
-    const h = this.world.heightAt(this.pos.x, this.pos.z);
+    const h = this.ground(this.pos.x, this.pos.z, this.pos.y);
     const wasOnGround = this.onGround;
     this.vel.y -= G * dt;
     this.pos.y += this.vel.y * dt;
@@ -284,22 +303,59 @@ export class Bike {
     // the tyres follow small crests and dips instead of taking off.
     const stick = wasOnGround && this.pos.y - h < 0.25;
     if (this.pos.y <= h || stick) {
-      // touching down after some air: report how hard we landed
-      if (this.airTime > 0.25) this.onImpact?.('land', Math.min(20, -this.vel.y));
+      // touching down after some air
+      if (this.airTime > 0.25) this.land(h);
       this.airTime = 0;
       this.pos.y = h;
       this.onGround = true;
-      this.world.normalAt(this.pos.x, this.pos.z, this.normal);
+      this.world.normalAt(this.pos.x, this.pos.z, this.normal, this.pos.y + 0.2);
       // vertical speed from the slope we're driving along, not from how far the
       // ground moved since the last tick (a small step there used to fling
       // the bike up at 9 m/s)
       const n = this.normal;
       this.vel.y = clamp(-(n.x * this.vel.x + n.z * this.vel.z) / Math.max(0.3, n.y), -30, 9);
     } else {
+      // In the air: the nose follows the arc a little on its own, and you
+      // line up the landing yourself, W/S pitching the nose down/up and A/D
+      // rolling. Keys still held from the takeoff don't count until let go,
+      // so keeping W down off a ramp doesn't send you in nose-first.
+      if (wasOnGround) this.airHeld = { w: input.throttle > 0, s: input.brake > 0, steer: Math.sign(input.steer) };
+      const held = this.airHeld || (this.airHeld = { w: false, s: false, steer: 0 });
+      if (held.w && !input.throttle) held.w = false;
+      if (held.s && !input.brake) held.s = false;
+      if (held.steer && Math.sign(input.steer) !== held.steer) held.steer = 0;
       this.onGround = false;
       this.airTime += dt;
+      const hs = Math.hypot(this.vel.x, this.vel.z);
+      this.trajPitch = 0.5 * Math.atan2(this.vel.y, Math.max(4, hs));
+      const pitchIn = (held.s ? 0 : input.brake) - (held.w ? 0 : input.throttle);
+      const rollIn = held.steer ? 0 : input.steer;
+      this.airPitch = clamp(this.airPitch + pitchIn * 1.6 * dt, -1.1, 1.1);
+      // (the spinning wheels slowly right a roll you've let go of)
+      this.airRoll = clamp(this.airRoll - rollIn * 1.2 * dt, -0.8, 0.8);
+      if (!rollIn) this.airRoll -= Math.sign(this.airRoll) * Math.min(Math.abs(this.airRoll), 0.5 * dt);
     }
     this.lastGround = h;
+  }
+
+  // Touching down. Landing level (lined up with the ground) keeps your speed;
+  // landing nose-first, tail-first or rolled over costs some, and so does a
+  // really heavy drop. The suspension squats to soak it up.
+  land(h) {
+    const impact = Math.max(0, -this.vel.y);
+    this.world.normalAt(this.pos.x, this.pos.z, this.normal, h + 0.2);
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), n = this.normal;
+    const groundPitch = Math.atan2(-(n.x * fx + n.z * fz), n.y);   // + = facing uphill
+    const groundRoll = Math.atan2(-(n.x * fz - n.z * fx), n.y);    // the ground's tilt across you, same sense as airRoll
+    const off = Math.abs(this.airPitch + this.trajPitch - groundPitch) + Math.abs(this.airRoll - groundRoll) * 0.5;
+    const loss = Math.min(0.4, Math.max(0, off - 0.3) * 0.7 + Math.max(0, impact - 15) * 0.012);
+    this.vel.x *= 1 - loss;
+    this.vel.z *= 1 - loss;
+    this.squash = Math.min(0.32, impact * 0.013);
+    this.bodyVy = Math.min(this.bodyVy, -impact * 0.3);
+    if (this.wheelie.active && off > 0.4) this.endWheelie();
+    this.onImpact?.('land', Math.min(20, impact * (1 + off)));
+    this.lastLanding = { impact, off, loss };
   }
 
   endWheelie() {
@@ -341,6 +397,7 @@ export class Bike {
     let worst = 0;
     for (const off of this.spec.body || [0]) {
       for (const b of boxes) {
+        if (b[4] != null && this.pos.y >= b[4] - 0.5) continue;
         const px = this.pos.x + fx * off, pz = this.pos.z + fz * off;
         const qx = clamp(px, b[0], b[2]), qz = clamp(pz, b[1], b[3]);
         const dx = px - qx, dz = pz - qz, d = Math.hypot(dx, dz);
@@ -387,7 +444,10 @@ export class Bike {
     _fwd.addScaledVector(up, -_fwd.dot(up)).normalize();
     _right.crossVectors(up, _fwd);
     _m.makeBasis(_right, up, _fwd);
-    return out.setFromRotationMatrix(_m);
+    out.setFromRotationMatrix(_m);
+    const pitch = (this.airPitch || 0) + (this.trajPitch || 0), roll = this.airRoll || 0;
+    if (pitch || roll) out.multiply(_q2.setFromEuler(_e.set(-pitch, 0, roll)));
+    return out;
   }
 
   applyTo(model) {

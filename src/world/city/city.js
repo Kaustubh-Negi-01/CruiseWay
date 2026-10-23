@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { ATMOS, HAZE_PARS, HAZE_FRAG, patch, textures } from '../rendering/materials.js';
 import { makeSpotBeacons } from '../rendering/world.js';
 import { glowTexture } from '../../vehicle/bike.js';
-import { CityLayout, CITY, NEON, K } from './cityGen.js';
+import { CityLayout, CITY, NEON, K, SKY_Z } from './cityGen.js';
 import { signAtlas, artRect, ART_COLOR } from './signs.js';
 import { paintCityMap } from './cityMap.js';
 
@@ -67,6 +67,7 @@ export class City {
     this.buildVending();
     this.buildContainers();
     this.buildBay();
+    this.buildSkyway();
     this.beacons = makeSpotBeacons(this.spots);
     this.scene.add(this.beacons);
     yield;
@@ -76,7 +77,14 @@ export class City {
   // ---- queries (same as the island's World) ----------------------------------------
 
   heightAt(x, z) { return this.layout.heightAt(x, z); }
-  normalAt(x, z, out = new THREE.Vector3()) { return out.set(0, 1, 0); }
+  // up, except on a sloping hard-light deck (needs the height to know which surface)
+  normalAt(x, z, out = new THREE.Vector3(), y = null) {
+    if (y == null) return out.set(0, 1, 0);
+    this.layout.groundAt(x, y, z);
+    const k = this.layout.slope;
+    return out.set(-k, 1, 0).normalize();
+  }
+  groundAt(x, y, z) { return this.layout.groundAt(x, y, z); }
   surfaceAt() { return 1; }
   readyAt() { return true; }
   boxesNear(x, z, out) { return this.layout.boxesNear(x, z, out); }
@@ -84,11 +92,12 @@ export class City {
 
   // First point (0..1) where the segment a->b enters a building, for the
   // chase camera; 1 if it's clear.
-  rayBlock(ax, az, bx, bz) {
+  rayBlock(ax, az, bx, bz, y = 0) {
     const list = this.layout.boxesNear((ax + bx) / 2, (az + bz) / 2, this.rayBuf || (this.rayBuf = []));
     let best = 1;
     const dx = bx - ax, dz = bz - az;
     for (const b of list) {
+      if (b[4] != null && b[4] < y - 0.5) continue;   // below the view line: up on a roof, it's under you
       let t0 = 0, t1 = 1;
       for (const [p, d, lo, hi] of [[ax, dx, b[0] - 0.3, b[2] + 0.3], [az, dz, b[1] - 0.3, b[3] + 0.3]]) {
         if (Math.abs(d) < 1e-6) { if (p < lo || p > hi) { t0 = 2; break; } continue; }
@@ -570,6 +579,117 @@ export class City {
     });
     this.water = new THREE.Mesh(mergeGeometries(parts), mat);
     this.group.add(this.water);
+  }
+
+  // The Skyway's hard-light decks (ramps, bridges, launch lips): see-through
+  // glowing slabs with light pulsing along them the way you ride, bright
+  // rails along their edges, thin light pillars under the ramps, and light
+  // lines along the roofs in between, so the way across the rooftops reads
+  // from the street and from up there. Lips glow pink: they throw you.
+  buildSkyway() {
+    const L = this.layout, T = 0.3;
+    const slabs = [], rails = [], posts = [];
+    const CYAN = [0.13, 0.9, 1], PINK = [1, 0.3, 0.85];
+    const tint = (g, c) => {
+      const n = g.attributes.position.count, a = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) a.set(c, i * 3);
+      g.setAttribute('aCol', new THREE.BufferAttribute(a, 3));
+      return g.index ? g.toNonIndexed() : g;
+    };
+    // a bar from (ax, ay) to (bx, by) along x, at z
+    const bar = (ax, ay, bx, by, z, w, h) => {
+      const len = Math.hypot(bx - ax, by - ay);
+      return new THREE.BoxGeometry(len, h, w).rotateZ(Math.atan2(by - ay, bx - ax)).translate((ax + bx) / 2, (ay + by) / 2, z);
+    };
+    for (const d of L.decks) {
+      const z0 = d.az - d.hw, z1 = d.az + d.hw, col = d.kind === 'lip' ? PINK : CYAN;
+      const A = (y, z) => [d.ax, y, z], B = (y, z) => [d.bx, y, z];
+      const ya = d.ay - 0.02, yb = d.by - 0.02;   // a touch under the surface you ride on
+      for (const g of [
+        quad(A(ya, z0), A(ya, z1), B(yb, z1), B(yb, z0)),                         // top
+        quad(A(ya - T, z0), B(yb - T, z0), B(yb - T, z1), A(ya - T, z1)),         // underside
+        quad(B(yb - T, z0), A(ya - T, z0), A(ya, z0), B(yb, z0)),                 // sides
+        quad(A(ya - T, z1), B(yb - T, z1), B(yb, z1), A(ya, z1)),
+        quad(A(ya - T, z0), A(ya - T, z1), A(ya, z1), A(ya, z0)),                 // ends
+        quad(B(yb - T, z1), B(yb - T, z0), B(yb, z0), B(yb, z1)),
+      ]) slabs.push(tint(g, col));
+      for (const side of [-1, 1]) {
+        const z = d.az + side * (d.hw - 0.06);
+        rails.push(tint(bar(d.ax, d.ay + 0.55, d.bx, d.by + 0.55, z, 0.07, 0.07), col));
+        rails.push(tint(bar(d.ax, d.ay + 0.06, d.bx, d.by + 0.06, z, 0.1, 0.1), col));
+        // ramps stand on light pillars
+        if (d.kind !== 'ramp') continue;
+        const len = d.bx - d.ax, n = Math.max(1, Math.round(len / 14));
+        for (let i = 1; i <= n; i++) {
+          const x = d.ax + (len * i) / n - 0.3, y = d.ay + ((d.by - d.ay) * (x - d.ax)) / len - T;
+          if (y - d.base < 0.6) continue;
+          posts.push(tint(new THREE.BoxGeometry(0.22, y - d.base, 0.22).translate(x, (y + d.base) / 2, z - side * 0.4), col));
+        }
+      }
+    }
+    // light lines along the roofs between the decks
+    const hw = L.decks[0]?.hw ?? 4.5;
+    for (const b of L.buildings) {
+      if (!b.sky) continue;
+      const [x0, , x1] = b.box;
+      for (const side of [-1, 1]) rails.push(tint(bar(x0, b.h + 0.04, x1, b.h + 0.04, SKY_Z + side * (hw - 0.06), 0.14, 0.06), CYAN));
+    }
+    if (!slabs.length) return;
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { ...ATMOS, uZ: { value: SKY_Z } },
+      vertexShader: /* glsl */`
+        attribute vec3 aCol;
+        varying vec3 vWPos; varying vec3 vN; varying vec3 vCol;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vWPos = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vCol = aCol;
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }`,
+      fragmentShader: /* glsl */`
+        ${HAZE_PARS}
+        uniform float uTime; uniform float uZ;
+        varying vec3 vN; varying vec3 vCol;
+        // thin lines at every whole number of v
+        float lines(float v, float w) {
+          float d = abs(fract(v + 0.5) - 0.5), aa = fwidth(v);
+          return 1.0 - smoothstep(w, w + aa, d);
+        }
+        void main() {
+          float across = abs(vWPos.z - uZ);
+          vec3 V = normalize(vWPos - cameraPosition);
+          float fres = pow(1.0 - abs(dot(V, vN)), 2.0);
+          float a, glow;
+          if (abs(vN.y) > 0.5) {
+            // the deck: a faint grid, a brighter band along each edge, and
+            // pulses of light running along it the way you ride
+            float grid = max(lines(vWPos.x / 2.0, 0.025), lines((vWPos.z - uZ) / 1.5, 0.03));
+            float edge = smoothstep(3.4, 4.5, across);
+            float pulse = pow(1.0 - fract((vWPos.x - uTime * 16.0) / 18.0), 6.0) * (1.0 - smoothstep(0.0, 3.5, across));
+            glow = 0.16 + grid * 0.45 + edge * 0.7 + pulse * 0.6;
+            a = (vN.y > 0.0 ? 0.42 : 0.3) + grid * 0.3 + edge * 0.4 + fres * 0.3;
+          } else {
+            glow = 1.1; a = 0.85;   // the slab's sides: a bright strip
+          }
+          gl_FragColor = vec4(vCol * glow * 1.6, clamp(a, 0.0, 0.95));
+          ${HAZE_FRAG}
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const glowMat = (k) => new THREE.ShaderMaterial({
+      vertexShader: /* glsl */`
+        attribute vec3 aCol; varying vec3 vCol;
+        void main() { vCol = aCol; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: /* glsl */`
+        varying vec3 vCol;
+        void main() { gl_FragColor = vec4(vCol * ${k.toFixed(2)}, 1.0); }`,
+      toneMapped: false,
+    });
+    this.group.add(new THREE.Mesh(mergeGeometries(slabs), mat), new THREE.Mesh(mergeGeometries(rails), glowMat(2.2)));
+    if (posts.length) this.group.add(new THREE.Mesh(mergeGeometries(posts), glowMat(0.9)));
   }
 
   dispose() {

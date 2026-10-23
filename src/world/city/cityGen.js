@@ -15,7 +15,10 @@ import { Route } from '../generation/spots.js';
 //    right, as you'd see it facing north);
 //  - the bay to the north and south, behind a seawall.
 // Buildings are tallest inside the Loop and drop to small shops toward the
-// ring road. Everything here is plain data; city.js turns it into meshes.
+// ring road. North of downtown runs the Skyway: rooftop parkour along a row
+// of terrace buildings, joined by glowing hard-light ramps and bridges, with
+// jumps between roofs and a big drop back to the street (see SKY below).
+// Everything here is plain data; city.js turns it into meshes.
 
 export const CITY_NAME = 'Hikari';
 
@@ -44,6 +47,28 @@ CITY.extent = 800;   // half-size of the square the map shows
 const LOOP = [[4, 2], [5, 2], [6, 2], [6, 3], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7], [6, 7], [6, 8], [5, 8], [4, 8], [4, 7], [3, 7], [3, 6], [3, 5], [3, 4], [3, 3], [4, 3]];
 
 const FLOOR = 3.6;   // metres per storey
+
+// ---- the Skyway --------------------------------------------------------------------
+// It runs along the core block row j = 8, down the middle of the blocks
+// (z = SKY_Z), from block 1 to block 8. Each block is a plaza (open ground,
+// for the ramp up and the landing at the end) or terrace buildings with flat
+// roofs at set heights. Between blocks, over the cross streets: a bridge, or
+// a jump with a launch lip on the roof before it.
+const SKY_J = 8;
+export const SKY_Z = (-CITY.C + CITY.P * 8 + -CITY.C + CITY.P * 9) / 2;
+export const SKY_HALF = 4.5;                 // half width of the hard-light decks
+const SKY = {
+  1: { plaza: true },                        // the ramp up from the street
+  2: { roofs: [14], climbTo: 22 },           // ...and a ramp up on the roof at the far end
+  3: { roofs: [22], lip: true },             // launch lip, then a jump
+  4: { roofs: [18] },
+  5: { roofs: [18, 13], lip: true },         // a drop between two terraces, a lip, a jump
+  6: { roofs: [11], climbTo: 20 },
+  7: { roofs: [20] },                        // and off the end: a 20 m plunge
+  8: { plaza: true },                        // the landing
+};
+const SKY_GAP = { 1: 'bridge', 2: 'bridge', 3: 'jump', 4: 'bridge', 5: 'jump', 6: 'bridge', 7: 'drop' };   // from block i to i + 1
+const STEP_UP = 0.5;   // how far below you a surface can be and still count as the ground you're on
 const gx = (i) => -CITY.C + CITY.P * i;   // core grid line positions
 
 export class CityLayout {
@@ -60,10 +85,12 @@ export class CityLayout {
     this.signs = [];
     this.vending = [];
     this.containers = [];
+    this.skyInner = {};
     for (const b of this.blocks) this.fillBlock(b, rand);
     this.lamps = [];
     this.makeLamps(rand);
     this.edges();
+    this.buildSkyway();
     this.skyline = makeSkyline(rand);
     // spatial lookups
     this.boxGrid = new Map();
@@ -73,8 +100,14 @@ export class CityLayout {
     for (const v of this.vending) gridAdd(this.boxGrid, v.box, v.box);
     for (const c of this.containers) gridAdd(this.boxGrid, c.box, c.box);
     for (const w of this.walls) gridAdd(this.boxGrid, w, w);
+    this.deckGrid = new Map();
+    for (const d of this.decks) gridAdd(this.deckGrid, [d.ax, d.az - d.hw, d.bx, d.az + d.hw], d);
     for (const l of this.lamps) gridAdd(this.poleGrid, [l.x, l.z, l.x, l.z], l);
     for (const r of [...this.blocks.map((b) => [b.x0, b.z0, b.x1, b.z1]), ...this.promenade]) gridAdd(this.groundGrid, r, r);
+    // the Skyway's corridor: no street lights in the way where it crosses the sidewalks
+    this.lamps = this.lamps.filter((l) => !(Math.abs(l.z - SKY_Z) < SKY_HALF + 2 && l.x > -CITY.C && l.x < CITY.C));
+    this.poleGrid = new Map();
+    for (const l of this.lamps) gridAdd(this.poleGrid, [l.x, l.z, l.x, l.z], l);
     this.net = new CityNet(this);
     // the way home: a gate at the harbour end of the main avenue, facing into the city
     this.portal = { x: -675, y: 0, z: 0, tx: 1, tz: 0, r: 16 };
@@ -156,9 +189,10 @@ export class CityLayout {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       const district = districtAt(cx, cz);
       const pieces = [[x0, z0, x1, z1, [1, 1, 1, 1]]];
-      // alleys: some core blocks, and every block in the wings (service lanes)
+      const skyI = za === gx(SKY_J) && SKY[Math.round((xa + CITY.C) / CITY.P)] ? Math.round((xa + CITY.C) / CITY.P) : 0;
+      // alleys: some core blocks, and every block in the wings (service lanes); none under the Skyway
       const wing = district === 'tech' || district === 'harbor';
-      if (wing || rand() < 0.35) {
+      if (!skyI && (wing || rand() < 0.35)) {
         const p = pieces.pop();
         const alongX = wing ? x1 - x0 > z1 - z0 : rand() < 0.5;
         const lo = alongX ? p[0] : p[1], hi = alongX ? p[2] : p[3];
@@ -171,7 +205,7 @@ export class CityLayout {
           pieces.push([p[0], p[1], p[2], a0, [1, 1, 1, 0]], [p[0], a1, p[2], p[3], [1, 1, 0, 1]]);
         }
       }
-      for (const [a, b, c, d, streets] of pieces) this.blocks.push({ x0: a, z0: b, x1: c, z1: d, streets, district });
+      for (const [a, b, c, d, streets] of pieces) this.blocks.push({ x0: a, z0: b, x1: c, z1: d, streets, district, sky: skyI });
     };
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) add(gx(i), gx(i + 1), gx(j), gx(j + 1));
     const wz = [-352, -176, 0, 176, 352];
@@ -187,6 +221,7 @@ export class CityLayout {
       b.x0 + (b.streets[0] ? w : gap), b.z0 + (b.streets[2] ? w : gap),
       b.x1 - (b.streets[1] ? w : gap), b.z1 - (b.streets[3] ? w : gap),
     ];
+    if (b.sky) { this.fillSkyBlock(b, inner, rand); return; }
     const maxLot = { down: 42, mid: 34, edge: 22, tech: 62, harbor: 72 }[b.district];
     const lots = [];
     const cut = (r) => {
@@ -250,7 +285,7 @@ export class CityLayout {
     if (x1 >= inner[2] - 0.01 || tight > 1) faces.push(['+x', block.streets[1]]);
     if (z0 <= inner[1] + 0.01 || tight > 1) faces.push(['-z', block.streets[2]]);
     if (z1 >= inner[3] - 0.01 || tight > 1) faces.push(['+z', block.streets[3]]);
-    const bld = { box: [x0, z0, x1, z1], h, style, seed: rand(), neon, tiers: [], faces, district: dist };
+    const bld = { box: [x0, z0, x1, z1, h], h, style, seed: rand(), neon, tiers: [], faces, district: dist };
     if (h > 70 && W > 18 && D > 18) {
       const t1 = h * (0.45 + rand() * 0.2), i1 = Math.min(W, D) * (0.08 + rand() * 0.07);
       const t2 = h * (0.8 + rand() * 0.1), i2 = i1 + Math.min(W, D) * (0.07 + rand() * 0.06);
@@ -278,7 +313,7 @@ export class CityLayout {
           const x = alongX ? u : v, z = alongX ? v : u;
           const hx = (alongX ? L : Wd) / 2, hz = (alongX ? Wd : L) / 2;
           const colors = Array.from({ length: levels }, () => Math.floor(rand() * 6));
-          this.containers.push({ x, z, alongX, levels, colors, box: [x - hx, z - hz, x + hx, z + hz] });
+          this.containers.push({ x, z, alongX, levels, colors, box: [x - hx, z - hz, x + hx, z + hz, CITY.kerb + levels * 2.6] });
         }
       }
     }
@@ -307,7 +342,7 @@ export class CityLayout {
         const u0 = Math.max(along[0] + 0.4, c - w / 2), u1 = Math.min(along[1] - 0.4, u0 + w);
         sign('band', u0, u1, 3.6, 3.6 + (u1 - u0) / 4.2);
       }
-      if (b.h > 10 && rand() < odds.blade * (street ? 1 : 0.5)) {
+      if (!b.sky && b.h > 10 && rand() < odds.blade * (street ? 1 : 0.5)) {
         const n = len > 16 && rand() < 0.5 ? 2 : 1;
         for (let k = 0; k < n; k++) {
           const u = k === 0 ? along[0] + 0.9 : along[1] - 0.9;
@@ -327,7 +362,7 @@ export class CityLayout {
         }
       }
     }
-    if ((b.district === 'mid' || b.district === 'edge') && b.h > 12 && b.h < 40 && b.faces.some((f) => f[1]) && rand() < 0.18) {
+    if (!b.sky && (b.district === 'mid' || b.district === 'edge') && b.h > 12 && b.h < 40 && b.faces.some((f) => f[1]) && rand() < 0.18) {
       const [face] = b.faces.find((f) => f[1]);
       const along = face[1] === 'x' ? [z0, z1] : [x0, x1];
       const len = along[1] - along[0];
@@ -352,7 +387,8 @@ export class CityLayout {
         const uu = u + k * 1.05;
         if (uu > along[1] - 0.6) break;
         const c = at + out * 0.4;
-        const box = face[1] === 'x' ? [c - 0.4, uu - 0.5, c + 0.4, uu + 0.5] : [uu - 0.5, c - 0.4, uu + 0.5, c + 0.4];
+        const top = CITY.kerb + 1.9;
+        const box = face[1] === 'x' ? [c - 0.4, uu - 0.5, c + 0.4, uu + 0.5, top] : [uu - 0.5, c - 0.4, uu + 0.5, c + 0.4, top];
         this.vending.push({ x: face[1] === 'x' ? c : uu, z: face[1] === 'x' ? uu : c, face, out, color: Math.floor(rand() * 4), box });
       }
     }
@@ -397,7 +433,7 @@ export class CityLayout {
       [-E - t, WZ, -E, E], [-E - t, -E, -E, -WZ], [E, WZ, E + t, E], [E, -E, E + t, -WZ],
       [-WX - t, WZ, -E, WZ + t], [-WX - t, -WZ - t, -E, -WZ], [E, WZ, WX + t, WZ + t], [E, -WZ - t, WX + t, -WZ],
       [-WX - t, -WZ, -WX, WZ], [WX, -WZ, WX + t, WZ],
-    ];
+    ].map((w) => [...w, 1.1]);
     // open water: every cell of the outline's grid that isn't land
     const F = 6000, bx = [-F, -WX, -E, E, WX, F], bz = [-F, -E, -WZ, WZ, E, F];
     this.water = [];
@@ -419,6 +455,103 @@ export class CityLayout {
   }
 
   boxesNear(x, z, out) { return gridGet(this.boxGrid, x, z, out, 1); }
+
+  // The ground under a point in 3D: the street or sidewalk, a roof, or a
+  // hard-light deck, whichever is highest without being more than STEP_UP
+  // above y. (Under a bridge you're on the street; on it, you're on the bridge.)
+  // Also leaves the slope of a deck you're on in this.slope (rise per metre along +x).
+  groundAt(x, y, z) {
+    let h = this.heightAt(x, z);
+    const lim = y + STEP_UP;
+    this.slope = 0;
+    for (const b of gridGet(this.boxGrid, x, z, this.gBuf || (this.gBuf = []), 0)) {
+      if (b[4] > h && b[4] <= lim && x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3]) h = b[4];
+    }
+    for (const d of gridGet(this.deckGrid, x, z, this.dBuf || (this.dBuf = []), 0)) {
+      if (x < d.ax || x > d.bx || Math.abs(z - d.az) > d.hw) continue;
+      const k = (d.by - d.ay) / (d.bx - d.ax), yy = d.ay + (x - d.ax) * k;
+      if (yy > h && yy <= lim) { h = yy; this.slope = k; }
+    }
+    return h;
+  }
+
+  // ---- the Skyway ----------------------------------------------------------------
+
+  // A block on the Skyway: open plaza, or terrace buildings with flat roofs
+  // at the set heights, splitting the block's length between them.
+  fillSkyBlock(b, inner, rand) {
+    const spec = SKY[b.sky];
+    this.skyInner[b.sky] = [inner[0], inner[2]];
+    if (spec.plaza) return;
+    const n = spec.roofs.length, len = (inner[2] - inner[0]) / n;
+    spec.roofs.forEach((h, k) => {
+      const x0 = inner[0] + len * k, x1 = inner[0] + len * (k + 1);
+      const bld = {
+        box: [x0, inner[1], x1, inner[3], h], h, style: k % 2 ? 1 : 0, seed: rand(), neon: Math.floor(rand() * NEON.length),
+        tiers: [[x0, inner[1], x1, inner[3], 0, h]], district: b.district, sky: true,
+        faces: [['-x', k === 0], ['+x', k === n - 1], ['-z', true], ['+z', true]],
+      };
+      this.buildings.push(bld);
+      this.addSigns(bld, rand);
+      this.addVending(bld, rand);
+    });
+  }
+
+  // The Skyway itself: hard-light decks (ramps, bridges, launch lips) and the
+  // line a rider follows along it, in 3D, jump arcs included. Decks run along
+  // +x: { ax, ay, bx, by, az (= SKY_Z), hw, base (what's under it, for the pillars),
+  // kind: 'ramp' | 'bridge' | 'lip' }.
+  buildSkyway() {
+    const k = CITY.kerb, decks = (this.decks = []), line = (this.skyLine = []);
+    const ix = (i) => this.skyInner[i];
+    const roofsOf = (i) => SKY[i].roofs;
+    const deck = (ax, ay, bx, by, base, kind) => decks.push({ ax, ay, bx, by, az: SKY_Z, hw: SKY_HALF, base, kind });
+    // the line only moves on along +x (a roof's first corner is skipped when a jump lands past it)
+    const at = (x, y) => { const p = line[line.length - 1]; if (!p || x > p[0] + 0.05) line.push([x, y]); };
+    // a ballistic-looking arc from a lip to a landing, for the racing line
+    const arc = (x0, y0, k0, x1, y1) => {
+      const L = x1 - x0, a = (y0 + L * k0 - y1) / (L * L);
+      for (let x = x0 + 3; x < x1; x += 3) at(x, y0 + (x - x0) * k0 - a * (x - x0) ** 2);
+      at(x1, y1);
+    };
+    for (let i = 1; i <= 8; i++) {
+      const [x0, x1] = ix(i), spec = SKY[i];
+      if (spec.plaza) {
+        if (i === 1) {
+          // the ramp up, across the whole plaza, to the first bridge's height
+          const top = roofsOf(2)[0];
+          at(x0, k); at(x0 + 2, k); deck(x0 + 2, k, x1, top, k, 'ramp'); at(x1, top);
+        } else { at(x0 + 24, k); at(x1, k); }   // the landing plaza
+      } else {
+        const roofs = roofsOf(i), part = (x1 - x0) / roofs.length;
+        roofs.forEach((h, n) => {
+          const a = x0 + part * n;
+          if (n && h < roofs[n - 1]) arc(a, roofs[n - 1], 0, a + 14, h);   // off the edge, down onto the lower roof
+          else at(a + (n ? 0.1 : 0), h);
+          at(a + part - 0.1, h);
+        });
+        const last = roofs[roofs.length - 1];
+        if (spec.climbTo) {
+          const len = (spec.climbTo - last) / 0.26;
+          line.pop();
+          at(x1 - len, last); deck(x1 - len, last, x1, spec.climbTo, last, 'ramp'); at(x1, spec.climbTo);
+        }
+        if (spec.lip) {
+          line.pop();
+          at(x1 - 7, last); deck(x1 - 7, last, x1, last + 0.9, last, 'lip'); at(x1, last + 0.9);
+        }
+      }
+      // across to the next block
+      const gap = SKY_GAP[i];
+      if (!gap) continue;
+      const [n0] = ix(i + 1);
+      const endY = line[line.length - 1][1];
+      if (gap === 'bridge') { deck(x1, endY, n0, endY, 0, 'bridge'); at(n0, endY); }
+      else if (gap === 'jump') arc(x1, endY, 0.9 / 7, n0 + 6, roofsOf(i + 1)[0]);
+      else arc(x1, endY, 0, n0 + 20, k);   // the drop
+    }
+  }
+
 
   // street-light poles, as round obstacles (the shape the island's tree trunks use)
   trunksNear(x, z, out) {
@@ -554,45 +687,76 @@ CityNet.prototype.pointOnEdge = RoadNetwork.prototype.pointOnEdge;
 // Spot ids in the city start here (the island's are 0, 1, 2...).
 export const CITY_SPOT_BASE = 100;
 
-// Hand-made courses that follow the map: round the Loop, round the ring road,
-// a zigzag through downtown, and a dash from the Circuit District to the
-// Harbor. Plus two Manhunt arenas.
+// One race and one Manhunt for the whole city.
+//
+// The Hikari Grand Circuit is a lap of everything: up the central avenue,
+// round the Loop, out through the Harbor, up onto the Skyway (ramp, bridges,
+// roof hops, jumps and the big drop), then the Circuit District and back
+// along the ring road. Its line is fully 3D, so the gates, walls and drive
+// line follow it up into the air.
 function makeSpots(L) {
   const net = L.net;
   const N = (i, j) => L.nodeAt(gx(i), gx(j)).id;
   const W = (x, z) => L.nodeAt(x, z).id;
-  const ring = [];
-  for (let j = 5; j <= 10; j++) ring.push(N(0, j));
-  for (let i = 1; i <= 10; i++) ring.push(N(i, 10));
-  for (let j = 9; j >= 0; j--) ring.push(N(10, j));
-  for (let i = 9; i >= 0; i--) ring.push(N(i, 0));
-  for (let j = 1; j <= 5; j++) ring.push(N(0, j));
-  const zig = [N(0, 9)];
-  for (let k = 0; k < 9; k++) { zig.push(N(k + 1, 9 - k)); zig.push(N(k + 1, 8 - k)); }
-  zig.push(N(10, 0));
-  const dash = [W(750, -176), W(600, -176)];
-  for (let i = 10; i >= 0; i--) dash.push(N(i, 3));
-  dash.push(W(-600, -176), W(-750, -176), W(-750, 0), W(-750, 176), W(-600, 176), N(0, 7));
-  const defs = [
-    { name: 'Loop Grand Prix', mode: 'race', difficulty: 4, nodes: [...LOOP.map(([i, j]) => N(i, j)), N(...LOOP[0])] },
-    { name: 'Ring Road Run', mode: 'race', difficulty: 3, nodes: ring },
-    { name: 'Downtown Zigzag', mode: 'race', difficulty: 5, nodes: zig },
-    { name: 'Circuit–Harbor Dash', mode: 'race', difficulty: 3, nodes: dash },
-    { name: 'Scramble Square', mode: 'hunt', difficulty: 1, nodes: [N(5, 5), N(6, 5)] },
-    { name: 'Circuit Yard', mode: 'hunt', difficulty: 2, nodes: [W(600, 0), W(750, 0)] },
-  ];
-  return defs.map((d, k) => {
-    const steps = net.stepsThrough(d.nodes);
-    const route = new Route(net, steps);
-    const checkpoints = [];
-    const spacing = Math.max(500, Math.min(900, route.length / 6));
-    for (let s = spacing; s < route.length - spacing * 0.5; s += spacing) checkpoints.push(s);
-    return {
-      id: CITY_SPOT_BASE + k, node: d.nodes[0], steps, route, length: route.length, km: route.length / 1000,
-      checkpoints, startS: 14, name: d.name, mode: d.mode, difficulty: d.difficulty,
-      half: net.edges[steps[0][0]].half, city: true,
-    };
+  const pts = [];   // [x, y, z, half]
+  const nodes = (ids) => {
+    for (const [id, fwd] of net.stepsThrough(ids)) {
+      const e = net.edges[id];
+      for (let j = 0; j < e.n; j++) {
+        const i = fwd ? j : e.n - 1 - j;
+        pts.push([e.x[i], 0, e.z[i], e.half]);
+      }
+    }
+  };
+  const start = N(5, 0);
+  nodes([start, N(5, 1), N(5, 2), N(4, 2), N(4, 3), N(3, 3), N(3, 4), N(3, 5), N(2, 5), N(1, 5), N(0, 5), W(-600, 0), W(-600, 176), N(0, 7), N(1, 7), N(1, 8)]);
+  // off the street and onto the Skyway
+  const wx = gx(1), ex = gx(9), SH = 0.4;   // on the Skyway the walls stand at the deck edges
+  pts.push([wx, 0, SKY_Z - 16, 6], [wx + 2, 0, SKY_Z - 6, 6], [wx + 8, CITY.kerb, SKY_Z, SH]);
+  for (const [x, y] of L.skyLine) pts.push([x, y, SKY_Z, SH]);
+  // off the landing plaza and back down to the street
+  pts.push([ex - 8, 0, SKY_Z, 6], [ex - 2, 0, SKY_Z - 6, 6], [ex, 0, SKY_Z - 16, 6]);
+  nodes([N(9, 8), N(9, 7), N(9, 6), N(9, 5), N(10, 5), W(600, 0), W(600, -176), N(10, 3), N(10, 2), N(10, 1), N(10, 0), N(9, 0), N(8, 0), N(7, 0), N(6, 0), start]);
+  const race = finishSpot(polylineRoute(pts), {
+    id: CITY_SPOT_BASE, node: start, name: 'Hikari Grand Circuit', mode: 'race', difficulty: 5, half: 12,
   });
+  const huntSteps = net.stepsThrough([N(5, 5), N(6, 5)]);
+  const hunt = finishSpot(new Route(net, huntSteps), {
+    id: CITY_SPOT_BASE + 1, node: N(5, 5), steps: huntSteps, name: 'Scramble Square', mode: 'hunt', difficulty: 1, half: 12,
+  });
+  return [race, hunt];
+}
+
+function finishSpot(route, o) {
+  const checkpoints = [];
+  const spacing = Math.max(500, Math.min(900, route.length / 6));
+  for (let s = spacing; s < route.length - spacing * 0.5; s += spacing) checkpoints.push(s);
+  return { steps: [], ...o, route, length: route.length, km: route.length / 1000, checkpoints, startS: 14, city: true };
+}
+
+// A Route (same queries as the island's) from 3D points, evened out to a
+// sample every 3 m so walls and the drive line follow it smoothly.
+function polylineRoute(pts) {
+  const xs = [], ys = [], zs = [], hs = [];
+  const push = (p) => { xs.push(p[0]); ys.push(p[1]); zs.push(p[2]); hs.push(p[3]); };
+  push(pts[0]);
+  for (let k = 1; k < pts.length; k++) {
+    const a = pts[k - 1], b = pts[k];
+    const len = Math.hypot(b[0] - a[0], b[2] - a[2]);
+    if (len < 0.05) continue;
+    const n = Math.max(1, Math.round(len / 3));
+    for (let j = 1; j <= n; j++) {
+      const t = j / n;
+      push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, t < 1 ? Math.min(a[3], b[3]) : b[3]]);
+    }
+  }
+  const r = Object.create(Route.prototype);
+  r.x = Float32Array.from(xs); r.y = Float32Array.from(ys); r.z = Float32Array.from(zs); r.half = Float32Array.from(hs);
+  r.n = xs.length;
+  r.s = new Float32Array(r.n);
+  for (let i = 1; i < r.n; i++) r.s[i] = r.s[i - 1] + Math.hypot(r.x[i] - r.x[i - 1], r.z[i] - r.z[i - 1]);
+  r.length = r.s[r.n - 1];
+  return r;
 }
 
 // ---- sign art --------------------------------------------------------------------------

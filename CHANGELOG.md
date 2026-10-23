@@ -2,7 +2,25 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–1.8 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.0 on 23 October 2026.
+
+## 2.0 · The Skyway: rooftop parkour in Hikari · 23 Oct 2026
+
+- **The Skyway.** A parkour line across the rooftops of Hikari's north row of blocks (inspired by the project owner's concept video):
+  - a long ramp up from a plaza to the first roof (14 m);
+  - bridges over the streets between roofs, and a climb to 22 m;
+  - pink launch lips that throw you across the gaps to the next roof (at about 80 km/h or more you clear them);
+  - a step down mid-roof, and a 20 m drop back to the street at the end.
+- **Glowing hard-light decks.** The ramps, bridges and lips are generated from the layout: see-through cyan slabs with a light grid, pulses of light running the way you ride, bright rails along the edges and light pillars under the ramps. Light lines run along the roofs in between, so the route reads from the street too. It's drawn in three draw calls.
+- **Real rooftops.** Roofs, ramps and bridges are solid ground: you can ride on top of them, and under a bridge you're still on the street. Walls only stop you below their tops.
+- **One race and one Manhunt in Hikari.** The four races and two arenas are replaced by a single flag for each:
+  - **Hikari Grand Circuit** (3.9 km): the central avenue, the Loop, the Harbor, the whole Skyway, the Circuit District and the ring road.
+  - **Scramble Square** for Manhunt.
+- **3D race route.** The route, its gates, walls and drive line follow the Skyway up into the air. A gate on a bridge only counts up there, not from the street underneath. Fall off and, after a moment, you're put back on the Skyway a short run-up before where you fell (R does the same).
+- **Mid-air control.** In the air, W / S pitch the nose down / up and A / D roll. Keys you were already holding at takeoff don't count until you let go, so keeping W down off a ramp doesn't send you in nose-first. The nose also follows the arc a little by itself. Land lined up with the ground and you keep your speed. Land badly or very hard and you lose some (up to 40%). A roll you let go of slowly rights itself.
+- **Heavy landings.** After a big drop the suspension squats (up to about 30 cm) and is damped harder for a moment, so it settles once instead of bouncing.
+- **On the map.** The Skyway shows in pink, its decks solid and the roof stretches dashed.
+- The island keeps all its race and Manhunt spots.
 
 ## 1.9 · Theme song, smoother rivals, drifting · 23 Oct 2026
 

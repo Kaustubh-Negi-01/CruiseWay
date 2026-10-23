@@ -1,4 +1,4 @@
-import { CITY, K, CITY_NAME, NEON } from './cityGen.js';
+import { CITY, K, CITY_NAME, NEON, SKY_Z, SKY_HALF } from './cityGen.js';
 import { mulberry32 } from '../generation/noise.js';
 
 // Hikari's map picture, in the style of a night-time city guide: dark water
@@ -106,6 +106,22 @@ export function paintCityMap(L) {
       }
     }
   }
+  // the Skyway: across the rooftops along one row of blocks; the hard-light
+  // decks solid, the stretches over the roofs (and the jumps) dashed
+  if (L.skyLine?.length) {
+    const x0 = L.skyLine[0][0], x1 = L.skyLine[L.skyLine.length - 1][0];
+    g.save();
+    g.shadowColor = '#ff4fd8'; g.shadowBlur = 12;
+    g.strokeStyle = 'rgba(255,79,216,0.75)';
+    g.lineWidth = SKY_HALF * 2 * k * 0.6;
+    g.setLineDash([10, 7]);
+    g.beginPath(); g.moveTo(X(x0), Z(SKY_Z)); g.lineTo(X(x1), Z(SKY_Z)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = '#ff7ae4';
+    for (const d of L.decks) fill(d.ax, d.az - d.hw, d.bx, d.az + d.hw);
+    g.restore();
+  }
+
   // the scramble crossing
   g.strokeStyle = 'rgba(255,255,255,0.7)';
   g.lineWidth = 3;
@@ -128,6 +144,7 @@ export function paintCityMap(L) {
     g.restore();
   };
   label('DOWNTOWN', 0, 150, 26, 'rgba(210,190,255,0.85)');
+  if (L.skyLine?.length) label('SKYWAY', -200, SKY_Z + 24, 16, 'rgba(255,122,228,0.95)', 0);
   label('THE LOOP', 0, gridZ(8) + 26, 20, 'rgba(120,240,255,0.95)');
   label('CIRCUIT DISTRICT', 607, 260, 24, 'rgba(110,230,245,0.9)');
   label('HARBOR', -607, 260, 24, 'rgba(255,190,110,0.9)');
