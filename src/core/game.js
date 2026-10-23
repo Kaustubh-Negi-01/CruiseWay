@@ -11,6 +11,7 @@ import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { DriveLine, pathFromRoute, pathFromPoints } from '../race/driveLine.js';
 import { FinishCine } from '../race/finishCine.js';
+import { startEvent, endEvent, updateEvent, zenSky, startZen, endZen, respawnMoving, rewindToRamp, POINTS_PER_SECOND } from '../race/megaEvent.js';
 import { Manhunt, HUNT } from '../modes/manhunt.js';
 import { buzz } from '../mobile/mobile.js';
 import { City } from '../world/city/city.js';
@@ -99,6 +100,7 @@ export class Game {
     this.resize();
 
     input.on('reset', (d) => d && this.running && this.resetCar());
+    input.on('rewind', (d) => d && this.running && rewindToRamp(this));
     input.on('camera', (d) => { if (d) { this.camMode = (this.camMode + 1) % 4; this.camPos = null; } });
   }
 
@@ -467,7 +469,7 @@ export class Game {
   placeAt(p, yaw) {
     this.car.place(p.x, p.z, yaw, p.y);
     this.camPos = null;
-    if (this.barriers) this.wallS = this.barriers.route.nearestS(p.x, p.z, 0, 1e6, 0).s;
+    if (this.barriers) this.wallS = p.s ?? this.barriers.route.nearestS(p.x, p.z, 0, 1e6, 0).s;
     // a teleport isn't "riding the wrong way": restart the guidance
     const r = this.race;
     if (r) r.wrongWay = 0;
@@ -645,6 +647,7 @@ export class Game {
           if (Math.abs(this.world.groundAt(q.x, q.y + 0.4, q.z) - q.y) < 0.6) break;
         }
       }
+      if (this.event) { respawnMoving(this, s); return; }   // the mega-event: back up to speed at once
       const p = r.spot.route.at(s);
       this.placeAt(p, Math.atan2(p.tx, p.tz));
       return;
@@ -662,6 +665,7 @@ export class Game {
     const cpu0 = now;
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
+    this.frameDt = dt;
 
     // during the finish cinematic the ride steers itself along the route
     const inp = this.cine ? this.cineInput() : this.input.read();
@@ -690,6 +694,7 @@ export class Game {
     portalVideoActive(near < 900);
     this.checkPortal(now);
     if (this.race) { if (this.race.mode === 'hunt') this.hunt.update(now, dt); else this.updateRace(now); }
+    updateEvent(this, dt);
     if (this.markers) this.markers.update(now / 1000);
     if (this.barriers) this.barriers.update(dt, this.camera.position);
     this.checkWater(dt);
@@ -721,6 +726,12 @@ export class Game {
   // Riding into the sea or a lake: you're slowed right down, and if you stay
   // under for a moment you're put back on the nearest road.
   checkWater(dt) {
+    if (this.event && this.race?.participant && this.car.pos.y < -1.2 && !this.car.flight) {
+      this.ui.toast('Splash! Back on the circuit.');
+      this.sound?.splash();
+      this.resetCar();
+      return;
+    }
     if (this.car.pos.y < -1.0) {
       this.car.underwater += dt;
       if (this.car.underwater > 1.4) {
@@ -740,6 +751,7 @@ export class Game {
     cl.update();
     if (this.map === 'city') { cl.events.length = 0; this.updateCityClimate(); return; }
     cl.state(w);
+    zenSky(this, w, this.frameDt || 1 / 60);
     const env = this.env;
     env.flash = this.weather.flash;
     env.setTime(w.day, w);
@@ -767,7 +779,8 @@ export class Game {
     // HUD clock, a few times a second
     if ((this.skyFrame = (this.skyFrame || 0) + 1) % 15 === 0) {
       const k = WEATHER[w.kind];
-      this.ui.sky?.(cl.clockText(), k.icon + ' ' + k.label, dusk > 0.5);
+      // (Zen Parkour holds the sky at golden hour, so the clock says so)
+      this.ui.sky?.(this.event?.mode === 'zen' ? 'Golden hour' : cl.clockText(), k.icon + ' ' + k.label, dusk > 0.5);
     }
   }
 
@@ -1126,7 +1139,8 @@ export class Game {
         : this.lobby && this.lobby.spot !== spot.id ? `Riders are gathering at ${this.spotById(this.lobby.spot).name}.` : null;
       this.sound?.prompt();
       this.ui.spotPrompt(spot, this.bestTimes[spot.id], busy, (yes) => {
-        if (yes) this.toHost({ t: 'spot_join', spot: spot.id });
+        if (yes === 'zen') startZen(this, spot);
+        else if (yes) this.toHost({ t: 'spot_join', spot: spot.id });
       });
     }
   }
@@ -1343,6 +1357,8 @@ export class Game {
       case 'race_finish': {
         if (!hr || hr.id !== msg.id || hr.phase !== 'running' || hr.times.has(from)) return;
         hr.times.set(from, Number(msg.time));
+        hr.points = hr.points || new Map();
+        hr.points.set(from, Math.max(0, Number(msg.points) || 0));
         hr.progress.set(from, this.raceSpot(hr.spot, hr.variant).checkpoints.length + 1);
         if (hr.times.size === 1 && hr.participants.length > 1) {
           const p = this.players.get(from);
@@ -1430,9 +1446,13 @@ export class Game {
 
   standings() {
     const hr = this.hostRace;
-    return hr.participants.map((id) => ({
-      id, cp: hr.progress.get(id) || 0, time: hr.times.has(id) ? hr.times.get(id) : null, left: !this.players.has(id),
-    })).sort((a, b) => {
+    const mega = this.spotById(hr.spot)?.mega;
+    return hr.participants.map((id) => {
+      const time = hr.times.has(id) ? hr.times.get(id) : null, pts = hr.points?.get(id) || 0;
+      // the mega race is scored on time minus stunt points
+      const score = time != null && mega ? Math.max(0, time - pts / POINTS_PER_SECOND) : time;
+      return { id, cp: hr.progress.get(id) || 0, time: score, raw: time, pts: mega ? pts : undefined, left: !this.players.has(id) };
+    }).sort((a, b) => {
       if (a.time != null && b.time != null) return a.time - b.time;
       if (a.time != null) return -1;
       if (b.time != null) return 1;
@@ -1538,6 +1558,7 @@ export class Game {
   }
 
   startRaceLocal(pub, participants, late) {
+    if (this.race?.zen) return;   // riding Zen Parkour: a race elsewhere leaves you be
     this.ui.closeSpotPrompt();
     const spot = this.raceSpot(pub.spot, pub.variant);
     const participant = !late && participants.includes(this.selfId) && this.map === this.mapOfSpot(pub.spot);
@@ -1560,6 +1581,7 @@ export class Game {
         this.wallS = this.barriers.lastS;
         return hit;
       };
+      if (spot.mega) startEvent(this, spot, 'race');
       const p = spot.route.at(spot.startS);
       this.placeAt(p, Math.atan2(p.tx, p.tz));
       this.car.frozen = true;
@@ -1611,9 +1633,10 @@ export class Game {
       this.ui.flash('Checkpoint ' + r.next + '/' + cps.length);
       this.sound?.checkpoint();
       buzz(20);
-      this.toHost({ t: 'race_cp', id: r.id, i: r.next });
+      if (!r.zen) this.toHost({ t: 'race_cp', id: r.id, i: r.next });
       return;
     }
+    if (r.zen) { endZen(this, 'Zen Parkour complete: every road on the island!'); return; }
     r.finished = true;
     r.finishTime = r.elapsed;
     r.progressS = route.length;
@@ -1626,10 +1649,12 @@ export class Game {
     // (no best time on a route that changes every race)
     const best = this.bestTimes[r.spot.id];
     if (!r.spot.shuffle && (best == null || r.elapsed < best)) this.bestTimes[r.spot.id] = r.elapsed;
-    this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
+    this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed, points: Math.round(r.stuntPoints || 0) });
   }
 
   endRaceLocal(msg) {
+    if (this.race?.zen) return;   // (Zen Parkour is only yours: a race elsewhere doesn't end it)
+    if (this.event?.mode === 'race') endEvent(this);
     if (this.markers) { this.markers.dispose(); this.markers = null; }
     if (this.barriers) { this.barriers.dispose(); this.barriers = null; }
     this.car.constraint = null;

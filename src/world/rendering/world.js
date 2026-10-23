@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TerrainGen, CHUNK, MAP_EXTENT, TREE_PINE, TREE_BROAD, TREE_BUSH } from '../generation/terrainGen.js';
 import { KIND_DIRT, ROAD_STEP } from '../generation/network.js';
 import { spotStyle } from '../generation/spots.js';
+import { megaSpot } from '../generation/megaCircuit.js';
 import { patch, textures, raw, ATMOS } from './materials.js';
 import { GrassField } from './grass.js';
 import TerrainWorker from '../generation/terrain.worker.js?worker';
@@ -17,7 +18,8 @@ export class World {
     this.seed = seed;
     this.gen = new TerrainGen(seed);
     this.net = this.gen.net;
-    this.spots = this.gen.spots;
+    // the race spots, plus the mega-event's flag (main thread only: the worker doesn't need it)
+    this.spots = [...this.gen.spots, megaSpot(this.gen)];
     this.group = new THREE.Group();
     scene.add(this.group);
 
@@ -104,7 +106,18 @@ export class World {
   // ---- queries --------------------------------------------------------------
 
   heightAt(x, z) { return this.gen.heightAt(x, z); }
-  normalAt(x, z, out = new THREE.Vector3()) { return this.gen.normalAt(x, z, out); }
+  // The ground for something at height y: the terrain, or while the mega-event
+  // is on, one of its launch ramps (`extraGround`, see race/megaProps.js).
+  groundAt(x, y, z) {
+    const h = this.gen.heightAt(x, z);
+    return this.extraGround ? Math.max(h, this.extraGround.groundAt(x, y, z)) : h;
+  }
+  normalAt(x, z, out = new THREE.Vector3(), y = null) {
+    if (y != null && this.extraGround && this.extraGround.groundAt(x, y, z) > this.gen.heightAt(x, z)) {
+      if (this.extraGround.normalAt(x, y, z, out)) return out;
+    }
+    return this.gen.normalAt(x, z, out);
+  }
   surfaceAt(x, z) { return this.gen.surfaceAt(x, z); }
   readyAt(x, z) { return this.chunks.has(Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK)); }
 
@@ -427,7 +440,7 @@ function spotLabel(s) {
   c.fillText(s.name, 48, 72);
   c.font = '500 30px system-ui, sans-serif';
   c.fillStyle = 'rgba(255,255,255,0.8)';
-  c.fillText(s.mode === 'hunt' ? '◎ MANHUNT · 3+ riders' : `${(s.length / 1000).toFixed(1)} km · ${'★'.repeat(s.difficulty)}${'☆'.repeat(5 - s.difficulty)} ${spotStyle(s).label}`, 48, 120);
+  c.fillText(s.mega ? `◆ MEGA-EVENT · Zen or Race · ${Math.round(s.length / 1000)} km` : s.mode === 'hunt' ? '◎ MANHUNT · 3+ riders' : `${(s.length / 1000).toFixed(1)} km · ${'★'.repeat(s.difficulty)}${'☆'.repeat(5 - s.difficulty)} ${spotStyle(s).label}`, 48, 120);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));

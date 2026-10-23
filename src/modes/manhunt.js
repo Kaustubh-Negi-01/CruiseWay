@@ -234,6 +234,7 @@ export class Manhunt {
 
   start(h) {
     const g = this.g;
+    if (g.race?.zen) return;   // riding Zen Parkour: a hunt elsewhere leaves you be
     g.ui.closeSpotPrompt();
     this.cleanup();
     const spot = g.spotById(h.spot);
@@ -391,7 +392,7 @@ export class Manhunt {
   finish(msg) {
     const g = this.g, r = this.r;
     this.cleanup();
-    g.race = null;
+    if (!g.race?.zen) g.race = null;
     this.r = null;
     g.ui.raceStandings(null);
     if (!r || !r.participant) return;

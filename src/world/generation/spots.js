@@ -16,7 +16,8 @@ export const DIFFICULTY = [
 
 // The easy (1-2 star) spots host Manhunt instead of races.
 export const HUNT_STYLE = { label: 'Manhunt', color: '#b35cff' };
-export const spotStyle = (s) => (s.mode === 'hunt' ? HUNT_STYLE : DIFFICULTY[s.difficulty]);
+export const MEGA_STYLE = { label: 'Mega-event', color: '#ffb22e' };
+export const spotStyle = (s) => (s.mega ? MEGA_STYLE : s.mode === 'hunt' ? HUNT_STYLE : DIFFICULTY[s.difficulty]);
 
 const PLACES = ['Pine', 'Copper', 'Granite', 'Hollow', 'Ember', 'Misty', 'Falcon', 'Harbor', 'Sable', 'Summit', 'Willow', 'Thunder', 'Amber', 'Cobalt', 'Juniper', 'Raven'];
 

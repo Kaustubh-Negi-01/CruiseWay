@@ -2,7 +2,24 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.1 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, 1.6–2.1 on 23 October 2026, and 2.2 on 24 October 2026.
+
+## 2.2 · Island Odyssey: the island mega-event · 24 Oct 2026
+
+Inspired by the project owner's concept videos. All the island's race and Manhunt spots stay as they were; this adds one more flag.
+
+- **One new flag, two modes.** A gold flag near the middle of the island. Ride up and choose:
+  - **Zen Parkour:** just you, any time (even while others race). No timer, no walls, nothing to lose, and your sky held at golden hour with fair weather.
+  - **Parkour Race:** a lobby like any race. Scored on time minus stunt points (1,000 points take a second off); the results show both.
+- **Every road on the island, once.** The circuit rides every paved road and dirt trail (about 60–75 km of road), never the same road twice, and finishes back at the flag.
+  - Where roads meet in odd numbers it can't join up by road, so those crossings are paired nearest-first and each pair gets a sky jump. With those, a single loop covers everything.
+  - It takes about 20 ms to plan, from the world seed, and is the same on every device.
+- **Sky jumps.** A giant launch ramp at the crossing (a 70 m curved deck with orange chevrons, rails, a steel frame and lit masts at the lip) faces the way you arrive, so you never turn round at speed. It throws you into a flight that sweeps round to the crossing it lands on: over lakes, forests and roads you've done, up to about 300 m high and 12 s long. The flight is a fixed arc, so it always lands; ramps on rising ground climb with it so they're never buried.
+- **Boosters.** Glowing pads on each ramp's run-up and along the roads: up to speed at once, plus a short surge.
+- **Stunts in the air.** W/S flips, A/D flat 360s, Q/E barrel rolls (corkscrews with W/S), each axis with its own momentum. Hold Space to grab for more points, but let go before landing. Keys held at takeoff don't count until released, so holding the throttle off a ramp doesn't flip you.
+- **Combos and Overdrive.** The combo counter shows the tricks, points and multiplier (more trick types and longer grabs multiply it). Near the ground an assist rights you if you let go of the keys. Land upright: the points become an Overdrive boost (an instant kick and a stronger engine for up to 6 s). Sketchy: half the points, no boost. On your roof or still grabbing: a bail and a big slowdown (a gentle one in Zen).
+- **Resets keep the flow.** R puts you back at the last checkpoint already doing 80 km/h; there's a checkpoint before every ramp. Deep water does the same at once. In Zen, F goes back to the run-up of the last ramp you jumped.
+- **Smooth.** The ramps and pads are a few draw calls; 75 km of race walls are culled by distance (61 fps in testing).
 
 ## 2.1 · Leaderboard on Tab, a new Hikari route every race · 23 Oct 2026
 

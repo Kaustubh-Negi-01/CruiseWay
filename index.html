@@ -96,9 +96,11 @@
       <div class="sp-name" id="spName"></div>
       <div class="sp-meta" id="spMeta"></div>
       <div class="sp-busy hidden" id="spBusy"></div>
-      <div class="row"><button class="btn" id="spNo">Not now</button><button class="btn primary" id="spYes">Race</button></div>
+      <div class="row"><button class="btn" id="spNo">Not now</button><button class="btn hidden" id="spAlt"></button><button class="btn primary" id="spYes">Race</button></div>
     </div>
     <div id="standings" class="hidden"></div>
+    <div id="stunts" class="hidden"></div>
+    <div id="zenBar" class="hidden"><span>☯ <b>Zen Parkour</b> · <kbd>F</kbd> back to the last ramp · <kbd>R</kbd> last checkpoint</span><button class="btn small" id="zenLeave">Leave</button></div>
     <div class="speedo"><div class="dial"><span id="speed">0</span><small>km/h</small></div><div class="trip"><b id="odo">0.0</b> km ridden<em id="surface"></em></div><div id="wheelie" class="slow"><span>WHEELIE</span><div class="wl-bar"><i></i></div><small>40+ km/h</small></div></div>
     <div id="countdown"></div>
     <div id="huntDanger"></div>
@@ -218,6 +220,7 @@
           <li><kbd>E</kbd> — Manhunt: use the IT's power-up</li>
           <li><kbd>M</kbd> — map: race spots, waypoints, GPS</li>
           <li><kbd>Tab</kbd> — show / hide the riders' leaderboard</li>
+          <li>Island mega-event, in the air: <kbd>W</kbd>/<kbd>S</kbd> flips · <kbd>A</kbd>/<kbd>D</kbd> 360s · <kbd>Q</kbd>/<kbd>E</kbd> barrel rolls · hold <kbd>Space</kbd> to grab (let go before landing) · <kbd>F</kbd> back to the last ramp (Zen)</li>
           <li><kbd>Q</kbd> — radio: search any song (YouTube) or live stations</li>
           <li><kbd>Alt</kbd>+<kbd>C</kbd> — show / hide the mouse cursor</li>
           <li><kbd>F3</kbd> — performance overlay (FPS, load)</li>
