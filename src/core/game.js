@@ -16,7 +16,7 @@ import { buzz } from '../mobile/mobile.js';
 import { City } from '../world/city/city.js';
 import { CityEnvironment, CityWeather } from '../world/city/citySky.js';
 import { Portal, PORTAL_LOOK, islandPortalSpots, portalVideoActive } from '../world/portal.js';
-import { CityLayout, CITY_SPOT_BASE, CITY_NAME } from '../world/city/cityGen.js';
+import { CityLayout, CITY_SPOT_BASE, CITY_NAME, raceVariant } from '../world/city/cityGen.js';
 import { loadCityBike } from '../vehicle/cityBike.js';
 import { signAtlas } from '../world/city/signs.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
@@ -423,6 +423,17 @@ export class Game {
   }
 
   netOfSpot(id) { return id >= CITY_SPOT_BASE ? this.cityLayout().net : this.island.net; }
+
+  // The spot as raced this time. Hikari's Grand Circuit takes a new route
+  // each race, built from the number the host picked (the same on every
+  // device); the island's spots always run the same way.
+  raceSpot(id, variant) {
+    const spot = this.spotById(id);
+    if (!spot?.shuffle || variant == null) return spot;
+    const key = id + ':' + variant;
+    if (this.variantSpot?.key !== key) this.variantSpot = { key, spot: raceVariant(this.cityLayout(), variant) };
+    return this.variantSpot.spot;
+  }
 
   // The bike's city look: fetched once, then swapped in wherever it shows.
   loadCityBike() {
@@ -1217,7 +1228,7 @@ export class Game {
       // guests start on the island: beside the host, or at the gate if the host is in the city
       spawn: this.map === 'island' ? { x: this.car.pos.x, z: this.car.pos.z } : this.islandArrival(),
       lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
-      race: hr && hr.phase !== 'lobby' && hr.mode !== 'hunt' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
+      race: hr && hr.phase !== 'lobby' && hr.mode !== 'hunt' ? { id: hr.id, spot: hr.spot, variant: hr.variant, participants: hr.participants } : null,
     });
   }
 
@@ -1332,7 +1343,7 @@ export class Game {
       case 'race_finish': {
         if (!hr || hr.id !== msg.id || hr.phase !== 'running' || hr.times.has(from)) return;
         hr.times.set(from, Number(msg.time));
-        hr.progress.set(from, this.spotById(hr.spot).checkpoints.length + 1);
+        hr.progress.set(from, this.raceSpot(hr.spot, hr.variant).checkpoints.length + 1);
         if (hr.times.size === 1 && hr.participants.length > 1) {
           const p = this.players.get(from);
           this.sendAll({ t: 'toast', text: `${p?.name || 'Someone'} won! ${FINISH_GRACE}s left for everyone else.` });
@@ -1401,8 +1412,10 @@ export class Game {
     hr.participants = hr.members.filter((id) => this.players.has(id));
     if (!hr.participants.length) { this.cancelLobby(); return; }
     hr.phase = 'spawn';
+    // a new route for this race (Hikari)
+    if (this.spotById(hr.spot).shuffle) hr.variant = 1 + Math.floor(Math.random() * 2 ** 30);
     this.sendAll({ t: 'lobby', lobby: null });
-    this.sendAll({ t: 'race_start', race: { id: hr.id, spot: hr.spot }, participants: hr.participants });
+    this.sendAll({ t: 'race_start', race: { id: hr.id, spot: hr.spot, variant: hr.variant }, participants: hr.participants });
     hr.readyTimer = setTimeout(() => this.beginCountdown(), 8000);
   }
 
@@ -1526,7 +1539,7 @@ export class Game {
 
   startRaceLocal(pub, participants, late) {
     this.ui.closeSpotPrompt();
-    const spot = this.spotById(pub.spot);
+    const spot = this.raceSpot(pub.spot, pub.variant);
     const participant = !late && participants.includes(this.selfId) && this.map === this.mapOfSpot(pub.spot);
     this.race = {
       id: pub.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
@@ -1610,8 +1623,9 @@ export class Game {
     this.ui.flash('Finished · ' + fmtTime(r.elapsed));
     this.sound?.finish(false);
     this.startFinishCine();
+    // (no best time on a route that changes every race)
     const best = this.bestTimes[r.spot.id];
-    if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
+    if (!r.spot.shuffle && (best == null || r.elapsed < best)) this.bestTimes[r.spot.id] = r.elapsed;
     this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
   }
 
@@ -1629,7 +1643,7 @@ export class Game {
     else if (msg.standings.length) {
       const show = () => {
         if (msg.winner === this.selfId) this.sound?.finish(true);
-        this.ui.results(this.spotById(msg.spot), this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+        this.ui.results(r.spot, this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
       };
       // the results wait until the finish film is over
       if (this.cine) this.afterFilm = show;

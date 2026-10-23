@@ -332,6 +332,8 @@ function sizeBigMap() {
 }
 addEventListener('resize', () => { if (ui.bigMap) sizeBigMap(); });
 
+input.on('players', (down) => { if (down && game.running) ui.toggleBoard(); });
+
 input.on('map', () => {
   if (!game.running) return;
   const m = $('#mapOverlay');

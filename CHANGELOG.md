@@ -2,7 +2,20 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.0.1 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.1 on 23 October 2026.
+
+## 2.1 · Leaderboard on Tab, a new Hikari route every race · 23 Oct 2026
+
+- **Leaderboard on Tab.** The riders' leaderboard (names and wins, top left) is hidden while you ride. Tab shows it, and Tab again hides it.
+- **After a race.** When a race or a Manhunt round ends, the leaderboard shows by itself for about 4 seconds, then slowly fades away over 3 seconds.
+- **A new Grand Circuit every race.** The Hikari Grand Circuit takes a different route each time, 3–5 km long:
+  - from the flag, through the streets to the Skyway, over all of it, and back to the flag by other streets;
+  - each leg heads for one or two random crossings, along streets weighted at random (wide ones favoured, with fewer turns so it flows);
+  - it never goes through the same crossing twice, and stays off the streets that run under the Skyway.
+- **The same route for everyone.** The host picks a number as the race starts and every rider builds the route from it. It takes about a millisecond.
+- **What you see.** The map shows the route once the race is on (none before, since it isn't decided yet). The race prompt and spot card say "new route every race", and the results show that race's length.
+- No best time is kept for it, since the route changes. The island's spots are unchanged.
+- The race prompt no longer shows "NaN% dirt" for city races.
 
 ## 2.0.1 · The theme song bows out on time · 23 Oct 2026
 
