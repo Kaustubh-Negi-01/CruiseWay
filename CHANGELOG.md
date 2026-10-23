@@ -2,7 +2,13 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.0 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–2.0.1 on 23 October 2026.
+
+## 2.0.1 · The theme song bows out on time · 23 Oct 2026
+
+- **The theme stops before you're in the world.** Pressing Create & drive or Join now fades it out in under a second, and the world only appears once it's silent. Before, the fade only began once the world had started loading, which held it up, so the song carried on into the ride.
+- If creating or joining fails, the song comes back on the menu.
+- A menu left open in a background tab (say, a second player's window) is quiet until you go back to it.
 
 ## 2.0 · The Skyway: rooftop parkour in Hikari · 23 Oct 2026
 

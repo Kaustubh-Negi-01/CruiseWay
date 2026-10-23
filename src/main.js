@@ -39,9 +39,11 @@ addEventListener('keydown', unlockAudio);
 document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.click(); });
 
 // ---------------------------------------------------------------- theme song
-// CruiseWay's theme plays on the menus (name, world code, loading) and fades
-// away as the ride begins. Browsers only allow sound after a first tap or
-// key press, so it starts then if it couldn't start straight away.
+// CruiseWay's theme plays on the menus (name, world code). Pressing Create &
+// drive or Join fades it out quickly, and the world only appears once it has
+// gone: building the world keeps the page too busy to fade it smoothly.
+// Browsers only allow sound after a first tap or key press, so it starts then
+// if it couldn't start straight away. A menu in a background tab stays quiet.
 const theme = new Audio('/audio/theme.m4a');
 theme.loop = true;
 theme.preload = 'auto';
@@ -51,23 +53,41 @@ const themeVolume = () => {
   return s.musicOn ? Math.min(1, s.master * Math.max(0.35, s.music) * 0.85) : 0;
 };
 function startTheme() {
-  if (!themeWanted || !theme.paused) return;
+  if (!themeWanted || !theme.paused || document.hidden) return;
   theme.volume = themeVolume();
   if (theme.volume > 0) theme.play().then(() => sound.setDuck(true)).catch(() => {});
 }
 for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, startTheme);
+document.addEventListener('visibilitychange', () => { if (document.hidden) theme.pause(); else startTheme(); });
 startTheme();
-function fadeTheme() {
+// Fades it out over `ms`; resolves once it has stopped (or was brought back).
+let themeFade = null;
+function fadeTheme(ms = 900) {
   themeWanted = false;
-  if (theme.paused) return;
+  if (theme.paused) return Promise.resolve();
+  if (themeFade) return themeFade;
   const v0 = theme.volume, t0 = performance.now();
-  const step = () => {
-    const k = Math.min(1, (performance.now() - t0) / 2500);
-    theme.volume = v0 * (1 - k) * (1 - k);
-    if (k < 1) requestAnimationFrame(step);
-    else { theme.pause(); sound.setDuck(false); }
-  };
-  step();
+  themeFade = new Promise((done) => {
+    const iv = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      if (themeWanted) theme.volume = themeVolume();   // brought back: creating the world failed
+      else theme.volume = v0 * (1 - k) * (1 - k);
+      if (k < 1 && !themeWanted) return;
+      clearInterval(iv);
+      themeFade = null;
+      if (!themeWanted) { theme.pause(); sound.setDuck(false); }
+      done();
+    }, 20);
+  });
+  return themeFade;
+}
+function stopTheme() {
+  themeWanted = false;
+  if (!theme.paused) { theme.pause(); sound.setDuck(false); }
+}
+function resumeTheme() {
+  themeWanted = true;
+  startTheme();
 }
 
 // ---------------------------------------------------------------- menu
@@ -127,13 +147,16 @@ $('#doCreate').onclick = async () => {
   if (busy) return;
   busy = true;
   status('Creating world…');
+  fadeTheme();
   const seed = $('#seed').value.trim() ? sanitizeSeed($('#seed').value) : previewSeed;
   const net = new Net();
   try {
     const code = await net.host();
+    await fadeTheme();
     enterGame({ net, seed, code });
   } catch (e) {
     status(e.message, true);
+    resumeTheme();
   } finally {
     busy = false;
   }
@@ -149,6 +172,7 @@ async function joinWorld(code) {
   if (busy) return;
   busy = true;
   status(`Joining world ${code}…`);
+  fadeTheme();
   const net = new Net();
   try {
     await net.join(code);
@@ -166,12 +190,14 @@ async function joinWorld(code) {
       hello();
       resend = setInterval(hello, 1500);
     });
+    await fadeTheme();
     enterGame({ net, seed: sanitizeSeed(welcome.seed), code, welcome });
   } catch (e) {
     net.close();
     // land on the code screen with the reason, so they can retry or create a world
     show('play', true);
     status(e.message, true);
+    resumeTheme();
   } finally {
     busy = false;
   }
@@ -179,7 +205,7 @@ async function joinWorld(code) {
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#doJoin').click(); });
 
 function enterGame({ net, seed, code, welcome }) {
-  fadeTheme();
+  stopTheme();   // (already faded out by now)
   $('#menu').classList.add('hidden');
   $('#hud').classList.remove('hidden');
   ui.setWorldCode(code);
