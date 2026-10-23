@@ -74,6 +74,20 @@ export class UI {
     this.minimap.scale = 0.2;
   }
 
+  // rode through a portal: the maps show the other world now
+  setWorld(world) {
+    this.minimap?.setWorld(world);
+    this.bigMap?.setWorld(world);
+  }
+
+  // the flash as you go through a portal
+  warp() {
+    const w = $('#warp');
+    w.classList.remove('go');
+    void w.offsetWidth;   // restart the animation
+    w.classList.add('go');
+  }
+
   setWorldCode(code) { $('#worldCode').textContent = code; }
 
   setRoster(list, selfId, hostId) {
@@ -82,6 +96,7 @@ export class UI {
       .sort((a, b) => b.wins - a.wins)
       .map((p) => `<li class="${p.id === selfId ? 'me' : ''}"><span class="dot" style="background:${p.color}"></span>
         <span class="nm">${esc(p.name)}${p.id === hostId ? ' 👑' : ''}${p.id === selfId ? ' (you)' : ''}</span>
+        <span class="where" title="${p.map === 'city' ? 'In the neon city' : 'On the island'}">${p.map === 'city' ? '🌃' : '🏝'}</span>
         <span class="wins" title="Race wins">${p.wins}🏆</span></li>`)
       .join('');
     $('#roster').innerHTML = `<li class="head"><span class="nm">Riders ${list.length}/6</span><span>wins</span></li>` + rows;

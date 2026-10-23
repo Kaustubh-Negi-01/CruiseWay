@@ -18,6 +18,7 @@ export const CAR = {
   lean: -0.09,       // body roll per radian of bike-style lean (cars roll outward, a little)
   wheelie: false,
   radius: 1.05,      // for tree collisions
+  body: [1.25, 0, -1.25],   // collision circles along the car, for walls
   wheelR: 0.37,
   // where the tyres touch the ground (x across, z along), so none sinks into a dip
   contacts: [[-0.86, 1.42], [0.86, 1.42], [-0.86, -1.38], [0.86, -1.38]],

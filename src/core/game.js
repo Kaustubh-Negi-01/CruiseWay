@@ -11,6 +11,11 @@ import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { Manhunt, HUNT } from '../modes/manhunt.js';
 import { buzz } from '../mobile/mobile.js';
+import { City } from '../world/city/city.js';
+import { CityEnvironment, CityWeather } from '../world/city/citySky.js';
+import { Portal, PORTAL_LOOK, islandPortalSpot } from '../world/portal.js';
+import { loadCityBike } from '../vehicle/cityBike.js';
+import { signAtlas } from '../world/city/signs.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
 const SEND_HZ = 15;
@@ -35,14 +40,15 @@ const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quater
 // anti-aliasing, shadow map, whether trees cast shadows, grass density, view
 // distance (chunks), terrain detail rings (quads per chunk side, near to
 // far) and how many rain/snow drops are drawn. 'fps' caps the frame rate (0 = only the user's cap applies).
+// 'reflect' is how much the city's wet streets mirror: 0 nothing, 1 signs, 2 signs and buildings.
 // 'auto' runs Medium and steps down (resolution first, then preset) if the
 // machine can't hold the frame rate. It never renders above native resolution.
 export const QUALITY = {
   auto:   { label: 'Auto' },
-  eco:    { label: 'Eco',    pr: 0.7,  msaa: false, fps: 30, shadow: 0,    treeShadows: false, grass: 0.3,  view: 4.5, rings: [64, 32, 16, 8],    weather: 0.35 },
-  low:    { label: 'Low',    pr: 0.85, msaa: false, fps: 0,  shadow: 1024, treeShadows: false, grass: 0.45, view: 5,   rings: [64, 32, 16, 8],    weather: 0.55 },
-  medium: { label: 'Medium', pr: 1.0,  msaa: true,  fps: 0,  shadow: 1024, treeShadows: false, grass: 0.6,  view: 6,   rings: [96, 48, 24, 12],   weather: 0.75 },
-  high:   { label: 'High',   pr: 1.5,  msaa: true,  fps: 0,  shadow: 2048, treeShadows: true,  grass: 1.0,  view: 7.5, rings: [128, 64, 32, 16], weather: 1 },
+  eco:    { label: 'Eco',    pr: 0.7,  msaa: false, fps: 30, shadow: 0,    treeShadows: false, grass: 0.3,  view: 4.5, rings: [64, 32, 16, 8],    weather: 0.35, reflect: 0 },
+  low:    { label: 'Low',    pr: 0.85, msaa: false, fps: 0,  shadow: 1024, treeShadows: false, grass: 0.45, view: 5,   rings: [64, 32, 16, 8],    weather: 0.55, reflect: 1 },
+  medium: { label: 'Medium', pr: 1.0,  msaa: true,  fps: 0,  shadow: 1024, treeShadows: false, grass: 0.6,  view: 6,   rings: [96, 48, 24, 12],   weather: 0.75, reflect: 2 },
+  high:   { label: 'High',   pr: 1.5,  msaa: true,  fps: 0,  shadow: 2048, treeShadows: true,  grass: 1.0,  view: 7.5, rings: [128, 64, 32, 16], weather: 1, reflect: 2 },
 };
 const AUTO_STEPS = ['medium', 'low', 'eco'];
 export const presetFor = (name) => QUALITY[name === 'auto' || !QUALITY[name] ? 'medium' : name];
@@ -83,6 +89,7 @@ export class Game {
     this.previewing = false;
     this.bestTimes = {};       // spot id -> best time this session
     this.vehicle = 'bike';     // 'bike' | 'car' (V to switch)
+    this.map = 'island';       // 'island' | 'city': which world we're riding in
     this.hunt = new Manhunt(this);
     addEventListener('resize', () => this.resize());
     this.resize();
@@ -100,19 +107,26 @@ export class Game {
 
   // ---- world --------------------------------------------------------------
 
+  // The island is always loaded; the neon city is built the first time it's
+  // needed (prepareCity). Each is a bundle of world, scene, sky and weather
+  // effects; this.world / scene / env / weather point at the one we're in.
   loadWorld(seed, color = COLORS[0]) {
-    if (this.world && this.world.seed === seed) {
+    if (this.islandW && this.islandW.world.seed === seed && this.map === 'island') {
       this.setModel(color);
       return;
     }
     this.disposeWorld();
-    const scene = (this.scene = new THREE.Scene());
-    this.world = new World(scene, seed);
-    this.env = new Environment(scene, this.renderer);
-    setBikeEnvironment(this.env.envMap);
-    this.world.water.material.envMap = this.env.envMap;
-    this.world.water.material.needsUpdate = true;
-    this.weather = new WeatherFX(scene, presetFor(this.quality).weather);
+    this.map = 'island';
+    const scene = new THREE.Scene();
+    const world = new World(scene, seed);
+    const env = new Environment(scene, this.renderer);
+    world.water.material.envMap = env.envMap;
+    world.water.material.needsUpdate = true;
+    const weather = new WeatherFX(scene, presetFor(this.quality).weather);
+    world.portal = islandPortalSpot(world, this.homePoint(world));
+    const portal = new Portal(scene, world.portal, PORTAL_LOOK.island);
+    this.islandW = { world, scene, env, weather, portal };
+    this.useBundle(this.islandW);
     // headlight: lives on the bike (see setModel), lit at night and in bad weather
     this.headlight = new THREE.SpotLight(0xfff0dc, 0, 150, 0.5, 0.6, 1.2);
 
@@ -151,16 +165,21 @@ export class Game {
     this.slowSince = 0;
     this.renderer.setPixelRatio(this.pr);
     this.resize();
-    if (!this.env) return;
-    const sun = this.env.sun;
+    if (!this.islandW) return;
+    const sun = this.islandW.env.sun;
     sun.castShadow = q.shadow > 0;
     if (q.shadow && sun.shadow.mapSize.x !== q.shadow) {
       sun.shadow.mapSize.set(q.shadow, q.shadow);
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
-    this.world.setDetail({ view: q.view, rings: q.rings, treeShadows: q.treeShadows, grass: q.grass });
-    this.weather?.setDensity(q.weather);
+    // the world we're in goes last: both write the shared haze settings
+    const detail = { view: q.view, rings: q.rings, treeShadows: q.treeShadows, grass: q.grass, reflect: q.reflect };
+    for (const B of this.map === 'city' ? [this.islandW, this.cityW] : [this.cityW, this.islandW]) {
+      if (!B) continue;
+      B.world.setDetail(detail);
+      B.weather.setDensity(q.weather);
+    }
   }
 
   // Milliseconds between frames we allow (0 = every display refresh).
@@ -224,32 +243,180 @@ export class Game {
     }
   }
 
+  useBundle(B) {
+    this.world = B.world;
+    this.scene = B.scene;
+    this.env = B.env;
+    this.weather = B.weather;
+    setBikeEnvironment(B.env.envMap);
+  }
+
+  bundle() { return this.map === 'city' ? this.cityW : this.islandW; }
+
+  // The island's world, wherever we are: races, lobbies and Manhunt happen there.
+  get island() { return this.islandW?.world; }
+
   disposeWorld() {
-    if (!this.world) return;
+    if (!this.islandW) return;
     this.markers?.dispose();
     this.markers = null;
     if (this.model) { this.scene.remove(this.model); disposeModel(this.model); this.model = null; }
-    this.weather?.dispose();
-    this.weather = null;
     this.headlight?.dispose();
     this.headlight = null;
-    this.world.dispose();
-    this.env.dispose();
-    this.world = null;
+    for (const B of [this.islandW, this.cityW]) {
+      if (!B) continue;
+      B.portal.dispose();
+      B.weather.dispose();
+      B.world.dispose();
+      B.env.dispose();
+    }
+    this.islandW = this.cityW = null;
+    this.cityJob = null;
+    this.world = this.scene = this.env = this.weather = null;
+    this.map = 'island';
+    document.body.classList.remove('in-city');
     this.renderer.renderLists.dispose();
+  }
+
+  // Get the city ready before anyone rides through the portal, so the trip
+  // is instant. In the background it's built a step at a time in idle
+  // moments; now = true finishes it on the spot.
+  prepareCity(now = false) {
+    if (this.cityW || !this.islandW) return;
+    this.cityJob ||= this.cityBuilder();
+    if (now) { while (!this.cityJob.next().done); return; }
+    if (this.cityStepping) return;
+    this.cityStepping = true;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 16));
+    const step = () => {
+      if (!this.cityJob || this.cityW) { this.cityStepping = false; return; }
+      if (this.cityJob.next().done) { this.cityStepping = false; return; }
+      idle(step, { timeout: 500 });
+    };
+    idle(step, { timeout: 500 });
+  }
+
+  *cityBuilder() {
+    let ms = 0, t0 = performance.now();
+    const lap = () => { ms += performance.now() - t0; };
+    const resume = () => { t0 = performance.now(); };
+    const atlas = signAtlas();
+    lap(); yield; resume();
+    this.renderer.initTexture(atlas);   // draw and upload the signs now, not on the first frame there
+    lap(); yield; resume();
+    const scene = new THREE.Scene();
+    const env = new CityEnvironment(scene, this.renderer);
+    lap(); yield; resume();
+    const world = new City(scene, this.islandW.world.seed);
+    lap(); yield; resume();
+    for (const _ of world.build()) { lap(); yield; resume(); }
+    const q = this.activePreset();
+    const weather = new WeatherFX(scene, q.weather);
+    const portal = new Portal(scene, world.portal, PORTAL_LOOK.city);
+    this.cityW = { world, scene, env, weather, portal };
+    this.cityJob = null;
+    world.setDetail({ view: q.view, reflect: q.reflect });
+    if (this.map === 'island') this.island.setFog();   // the city just set the shared haze
+    this.renderer.compileAsync?.(scene, this.camera).catch(() => {});
+    lap();
+    console.info('neon city built in ' + Math.round(ms) + ' ms of work');
+  }
+
+  // Switch worlds: everything that lives in a scene moves with us.
+  setMap(to) {
+    if (to === this.map) return;
+    if (to === 'city') this.prepareCity(true);
+    for (const p of this.players?.values() || []) this.removeGhost(p);   // rebuilt in the new scene
+    if (this.model) { this.scene.remove(this.model); disposeModel(this.model); this.model = null; }
+    this.map = to;
+    this.useBundle(to === 'city' ? this.cityW : this.islandW);
+    this.car.world = this.world;
+    this.setModel(this.modelColor, true);
+    if (to === 'city' && !this.bikeAsked) { this.bikeAsked = true; this.loadCityBike(); }
+    this.hunt.moveTo(this.scene);
+    this.nav = null;
+    this.prompted = null;
+    this.ui.closeSpotPrompt?.();
+    this.ui.setWorld?.(this.world);
+    this.applyQuality(this.quality, true);
+    this.envLevelSet = -1;
+    document.body.classList.toggle('in-city', to === 'city');
+    // the host records the move (and tells everyone) when it handles this
+    if (this.running) this.toHost({ t: 'map', m: to });
+  }
+
+  // Ride through a portal: arrive at the other world's gate, still moving.
+  travel() {
+    const to = this.map === 'island' ? 'city' : 'island';
+    const c = this.car;
+    const speed = Math.max(8, Math.abs(c.forwardSpeed));
+    // a lobby you were waiting in is on the island
+    if (this.lobby && this.lobby.members.includes(this.selfId)) this.toHost({ t: 'spot_leave' });
+    this.bundle().portal.flash();
+    this.setMap(to);
+    const P = this.world.portal;
+    this.placeAt({ x: P.x + P.tx * 12, z: P.z + P.tz * 12 }, Math.atan2(P.tx, P.tz));
+    c.vel.set(P.tx * speed, 0, P.tz * speed);
+    this.portalAlong = null;
+    this.portalCool = performance.now() + 1500;
+    this.bundle().portal.flash();
+    this.sound?.portal();
+    this.ui.warp?.();
+    buzz(80);
+    this.ui.toast(to === 'city' ? 'Welcome to the neon city. The gate behind you leads back to the island.' : 'Back on the island.');
+  }
+
+  // Each frame: did we just ride through the gate? (Crossing its plane,
+  // inside the arch.) Also gets the city ready as you approach.
+  checkPortal(now) {
+    const P = this.world.portal;
+    if (!P) return;
+    const c = this.car;
+    const dx = c.pos.x - P.x, dz = c.pos.z - P.z;
+    const along = dx * P.tx + dz * P.tz, side = dx * P.tz - dz * P.tx;
+    const near = Math.hypot(dx, dz);
+    if (this.map === 'island' && near < 450) this.prepareCity();
+    // the city bike is only downloaded by riders heading that way
+    if (this.map === 'island' && near < 250 && !this.bikeAsked) { this.bikeAsked = true; this.loadCityBike(); }
+    const prev = this.portalAlong;
+    this.portalAlong = along;
+    if (prev == null || now < (this.portalCool || 0)) return;
+    if ((prev < 0) === (along < 0) || Math.abs(side) > P.r * 0.92 || Math.abs(along) > 8 || c.pos.y - P.y > P.r * 1.4) return;
+    const r = this.race;
+    if (r?.participant && !r.finished) {
+      if (now - (this.sealedAt || 0) > 4000) { this.sealedAt = now; this.ui.toast("The portal stays shut while you're in a race."); }
+      return;
+    }
+    this.travel();
+  }
+
+  // The bike's city look: fetched once, then swapped in wherever it shows.
+  loadCityBike() {
+    loadCityBike().then(() => {
+      if (!this.islandW || this.map !== 'city') return;
+      this.setModel(this.modelColor, true);
+      for (const p of this.players?.values() || []) if (p.vehicle !== 'car') this.removeGhost(p);
+    }).catch((e) => console.warn('city bike failed to load', e));
+  }
+
+  // Where new riders start: a little way down the route of the first race spot.
+  homePoint(world) {
+    const spot = world.spots[0];
+    if (spot) return spot.route.at(Math.min(120, spot.route.length / 3));
+    const e = world.net.edges[0];
+    return world.net.pointOnEdge(e, e.length / 2);
+  }
+
+  // Just past the island's gate, for guests who join while the host is in the city.
+  islandArrival() {
+    const P = this.island.portal;
+    return { x: P.x + P.tx * 12, z: P.z + P.tz * 12 };
   }
 
   // a little way down the route of the first spot, facing along it
   spawnHome() {
-    const spot = this.world.spots[0];
-    if (spot) {
-      const p = spot.route.at(Math.min(120, spot.route.length / 3));
-      this.placeAt(p, Math.atan2(p.tx, p.tz));
-    } else {
-      const e = this.world.net.edges[0];
-      const p = this.world.net.pointOnEdge(e, e.length / 2);
-      this.placeAt(p, Math.atan2(p.tx, p.tz));
-    }
+    const p = this.homePoint(this.world);
+    this.placeAt(p, Math.atan2(p.tx, p.tz));
   }
 
   placeAt(p, yaw) {
@@ -262,13 +429,13 @@ export class Game {
     this.navAgainst = 0;
   }
 
-  setModel(color) {
-    if (this.model && this.modelColor === color && this.modelKind === this.vehicle) return;
+  setModel(color, force = false) {
+    const v = vehicleFor(this.vehicle, this.map);
+    if (!force && this.model && this.modelColor === color && this.modelKind === v) return;
     if (this.model) { this.scene.remove(this.model); disposeModel(this.model); }
-    const v = vehicleFor(this.vehicle);
     this.model = v.build(color);
     this.modelColor = color;
-    this.modelKind = this.vehicle;
+    this.modelKind = v;
     this.car.setSpec(v.spec);
     this.view = null;   // re-apply the camera view to the new model
     this.scene.add(this.model);
@@ -338,6 +505,9 @@ export class Game {
     const clock = this.isHost ? { tick: 0, key: Math.floor(Math.random() * 1e9) } : (welcome.clock || { tick: 0, key: 0 });
     this.climate = new Climate(seed, clock.key, clock.tick);
     if (this.clearSkies) this.climate.force('clear');
+    this.cityWeather = new CityWeather(seed, clock.key);
+    // build the city in a quiet moment, so the portal is ready whenever someone rides through
+    this.cityTimer = setTimeout(() => this.running && this.prepareCity(), 5000);
     this.netTicks = 0;
     this.wx = {};
     if (welcome?.spawn) {
@@ -350,7 +520,7 @@ export class Game {
     this.car.odometer = 0;
 
     if (this.isHost) {
-      this.players.set(this.selfId, { id: this.selfId, name, color: COLORS[0], wins: 0, vehicle: this.vehicle });
+      this.players.set(this.selfId, { id: this.selfId, name, color: COLORS[0], wins: 0, vehicle: this.vehicle, map: 'island' });
       net.on('message', (from, msg) => this.hostHandle(from, msg));
       net.on('leave', (id) => this.hostLeave(id));
     } else {
@@ -397,6 +567,7 @@ export class Game {
 
   stop() {
     this.running = false;
+    clearTimeout(this.cityTimer);
     this.sound?.stopRide();
     this.sound?.weather(null);
     this.barriers?.dispose();
@@ -444,6 +615,8 @@ export class Game {
     this.updateCamera(dt);
     this.weather.update(dt, this.camera, this.wx, this.env.envLevel, this.renderer.domElement.height, this.headlight.intensity / HEADLIGHT);
     this.updateGhosts(now);
+    this.bundle().portal.update(dt, this.camera.position);
+    this.checkPortal(now);
     if (this.race) { if (this.race.mode === 'hunt') this.hunt.update(now, dt); else this.updateRace(now); }
     if (this.markers) this.markers.update(now / 1000);
     if (this.barriers) this.barriers.update(dt, this.camera.position);
@@ -492,6 +665,7 @@ export class Game {
   updateClimate() {
     const cl = this.climate, w = this.wx;
     cl.update();
+    if (this.map === 'city') { cl.events.length = 0; this.updateCityClimate(); return; }
     cl.state(w);
     const env = this.env;
     env.flash = this.weather.flash;
@@ -524,6 +698,31 @@ export class Game {
     }
   }
 
+  // Always night in the city; rain and fog come and go on the shared clock.
+  updateCityClimate() {
+    const w = this.wx, env = this.env, cw = this.cityWeather;
+    cw.state(this.climate.now(), w, this.clearSkies);
+    env.flash = this.weather.flash;
+    env.setWeather(w);
+    ATMOS.uSnow.value = 0;
+    ATMOS.uWet.value = w.wet;
+    this.world.setWeatherFog(w.fog);
+    this.world.setWet(w.wet);
+    this.world.gripScale = 1 - w.wet * 0.08;
+    for (const ev of cw.events) {
+      this.weather.strike(ev, this.camera.position, (x, z) => this.world.heightAt(x, z));
+      this.sound?.thunder(ev.dist);
+    }
+    cw.events.length = 0;
+    this.sound?.weather(w);
+    this.headlight.intensity = HEADLIGHT;
+    if (Math.abs(env.envLevel - this.envLevelSet) > 0.02) {
+      this.envLevelSet = env.envLevel;
+      setEnvLevel(this.model, env.envLevel);
+    }
+    if ((this.skyFrame = (this.skyFrame || 0) + 1) % 15 === 0) this.ui.sky?.('Night', w.label, true);
+  }
+
   // Swap rides on the spot (V menu). Not mid-race: you finish on what you started with.
   setVehicle(kind) {
     kind = kind === 'car' ? 'car' : 'bike';
@@ -551,7 +750,8 @@ export class Game {
   // It's drawn into a corner of the game canvas and copied out straight away,
   // so it needs no second WebGL context; the next frame paints over it.
   vehicleThumb(kind, color = this.modelColor || COLORS[0]) {
-    const key = kind + color;
+    const v = vehicleFor(kind, this.map);
+    const key = v.label + color;
     this.thumbs ||= {};
     if (this.thumbs[key]) return this.thumbs[key];
     const r = this.renderer, pr = r.getPixelRatio(), full = r.getSize(new THREE.Vector2());
@@ -566,7 +766,7 @@ export class Game {
     const rim = new THREE.DirectionalLight(0x9fc4ff, 2.2);
     rim.position.set(-5, 3, -5);
     scene.add(keyLight, rim);
-    const model = vehicleFor(kind).build(color);
+    const model = v.build(color);
     scene.add(model);
     const box = new THREE.Box3().setFromObject(model);
     const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
@@ -638,7 +838,7 @@ export class Game {
       ROLL_Z.setFromAxisAngle(_v2.set(0, 0, 1), c.lean * 0.45 + up * 0.05 * Math.sin(w.t * 1.7));
       PITCH.setFromAxisAngle(_v2.set(1, 0, 0), -w.angle);
       LOOK_UP.setFromAxisAngle(_v2.set(1, 0, 0), -(w.angle + this.lookLift * (WHEELIE_LOOK - 1)));
-      const vd = vehicleFor(this.vehicle);
+      const vd = vehicleFor(this.vehicle, this.map);
       const eye = _v.copy(view === 'cockpit' ? vd.eye : vd.nose);
       if (view === 'cockpit') eye.addScaledVector(WHEELIE_SIT, up);
       eye.applyQuaternion(ROLL_FULL);
@@ -677,6 +877,14 @@ export class Game {
     const ground = this.world.heightAt(this.camPos.x, this.camPos.z) + 0.55;
     if (this.camPos.y < ground) this.camPos.y += (ground - this.camPos.y) * k(25);
     this.camera.position.copy(this.camPos);
+    // between buildings: pull in rather than look through a wall
+    if (this.world.rayBlock) {
+      const t = this.world.rayBlock(bx, bz, this.camPos.x, this.camPos.z);
+      const want = t < 1 ? Math.max(0.15, t - 0.08) : 1;
+      this.camPull = this.camPull == null ? want : this.camPull + (want - this.camPull) * k(want < this.camPull ? 25 : 3);
+      this.camera.position.x = bx + (this.camPos.x - bx) * this.camPull;
+      this.camera.position.z = bz + (this.camPos.z - bz) * this.camPull;
+    } else this.camPull = 1;
     this.camera.lookAt(bx + fx * 7, by + 0.95, bz + fz * 7);
     this.camRoll += (c.lean * 0.3 - this.camRoll) * k(5);
     this.camera.rotateZ(this.camRoll);
@@ -821,6 +1029,8 @@ export class Game {
     const renderT = now - INTERP_DELAY;
     for (const p of this.players.values()) {
       if (p.id === this.selfId || !p.buf || p.buf.length === 0) continue;
+      // riders in the other world aren't here at all
+      if ((p.map || 'island') !== this.map) { if (p.ghost) this.removeGhost(p); continue; }
       if (!p.ghost) this.makeGhost(p);
       const buf = p.buf;
       let a = buf[0], b = buf[0];
@@ -837,7 +1047,7 @@ export class Game {
       p.qa.set(...a.s.q); p.qb.set(...b.s.q);
       g.quaternion.slerpQuaternions(p.qa, p.qb, t);
       const ud = g.userData;
-      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, vehicleFor(p.vehicle).spec.rearZ);
+      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, vehicleFor(p.vehicle, this.map).spec.rearZ);
       const sa = (a.s.st || 0) * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
       for (const st of ud.steerers || [ud.steerer]) st.rotation.y = sa;
       p.spin = (p.spin || 0) + (a.s.v / 0.37) * (1 / 60);
@@ -848,7 +1058,7 @@ export class Game {
 
   makeGhost(p) {
     this.removeGhost(p);
-    const g = ghostify(vehicleFor(p.vehicle).build(p.color));
+    const g = ghostify(vehicleFor(p.vehicle, this.map).build(p.color));
     const tag = nameSprite(p.name, p.color);
     tag.position.y = p.vehicle === 'car' ? 2.3 : 2.1;
     g.add(tag);
@@ -875,7 +1085,7 @@ export class Game {
   }
 
   rosterList() {
-    return [...this.players.values()].map(({ id, name, color, wins, vehicle }) => ({ id, name, color, wins, vehicle: vehicle || 'bike' }));
+    return [...this.players.values()].map(({ id, name, color, wins, vehicle, map }) => ({ id, name, color, wins, vehicle: vehicle || 'bike', map: map || 'island' }));
   }
 
   // ---- messaging helpers ------------------------------------------------------
@@ -901,7 +1111,8 @@ export class Game {
       t: 'welcome', you: to, hostId: this.selfId, seed: this.seed,
       clock: { tick: this.climate.now(), key: this.climate.key2 },
       roster: this.rosterList(),
-      spawn: { x: this.car.pos.x, z: this.car.pos.z },
+      // guests start on the island: beside the host, or at the gate if the host is in the city
+      spawn: this.map === 'island' ? { x: this.car.pos.x, z: this.car.pos.z } : this.islandArrival(),
       lobby: hr && hr.phase === 'lobby' ? this.lobbyPub() : null,
       race: hr && hr.phase !== 'lobby' && hr.mode !== 'hunt' ? { id: hr.id, spot: hr.spot, participants: hr.participants } : null,
     });
@@ -915,7 +1126,7 @@ export class Game {
         const used = new Set([...this.players.values()].map((p) => p.color));
         const color = COLORS.find((c) => !used.has(c)) || COLORS[this.players.size % COLORS.length];
         const name = String(msg.name || 'Rider').slice(0, 16);
-        this.players.set(from, { id: from, name, color, wins: 0, vehicle: msg.vehicle === 'car' ? 'car' : 'bike' });
+        this.players.set(from, { id: from, name, color, wins: 0, vehicle: msg.vehicle === 'car' ? 'car' : 'bike', map: 'island' });
         this.sendWelcome(from);
         this.sendAll({ t: 'roster', list: this.rosterList() });
         this.sendAll({ t: 'toast', text: `${name} joined the world` });
@@ -930,6 +1141,24 @@ export class Game {
         this.sendAll({ t: 'roster', list: this.rosterList() });
         break;
       }
+      case 'map': {
+        // someone rode through a portal: tell each world what it saw
+        const p = this.players.get(from);
+        const to = msg.m === 'city' ? 'city' : 'island';
+        if (!p || (p.map || 'island') === to) break;
+        const was = p.map || 'island';
+        p.map = to;
+        if (from !== this.selfId) this.removeGhost(p);
+        this.sendAll({ t: 'roster', list: this.rosterList() });
+        for (const q of this.players.values()) {
+          if (q.id === from) continue;
+          const here = q.map || 'island';
+          const text = here === was ? (to === 'city' ? `${p.name} warped into the neon city` : `${p.name} left for the island`)
+            : here === to ? (to === 'city' ? `${p.name} rolled in from the island` : `${p.name} is back from the city`) : null;
+          if (text) this.tell(q.id, { t: 'toast', text });
+        }
+        break;
+      }
       case 'st': {
         const { t, ...snap } = msg;
         this.latest.set(from, snap);
@@ -937,14 +1166,14 @@ export class Game {
         break;
       }
       case 'spot_join': {
-        const spot = this.world.spots[msg.spot | 0];
+        const spot = this.island.spots[msg.spot | 0];
         if (!spot) return;
         if (hr && hr.phase !== 'lobby') {
-          this.tell(from, { t: 'toast', text: `A race is already running at ${this.world.spots[hr.spot].name}.` });
+          this.tell(from, { t: 'toast', text: `A race is already running at ${this.island.spots[hr.spot].name}.` });
           return;
         }
         if (hr && hr.spot !== spot.id) {
-          this.tell(from, { t: 'toast', text: `Riders are already gathering at ${this.world.spots[hr.spot].name}.` });
+          this.tell(from, { t: 'toast', text: `Riders are already gathering at ${this.island.spots[hr.spot].name}.` });
           return;
         }
         if (!hr) {
@@ -1000,7 +1229,7 @@ export class Game {
       case 'race_finish': {
         if (!hr || hr.id !== msg.id || hr.phase !== 'running' || hr.times.has(from)) return;
         hr.times.set(from, Number(msg.time));
-        hr.progress.set(from, this.world.spots[hr.spot].checkpoints.length + 1);
+        hr.progress.set(from, this.island.spots[hr.spot].checkpoints.length + 1);
         if (hr.times.size === 1 && hr.participants.length > 1) {
           const p = this.players.get(from);
           this.sendAll({ t: 'toast', text: `${p?.name || 'Someone'} won! ${FINISH_GRACE}s left for everyone else.` });
@@ -1130,7 +1359,7 @@ export class Game {
         for (const [id, p] of this.players) if (!ids.has(id)) { this.removeGhost(p); this.players.delete(id); }
         for (const p of msg.list) {
           const cur = this.players.get(p.id);
-          if (cur && cur.vehicle !== p.vehicle) this.removeGhost(cur);   // switched rides: rebuilt next frame
+          if (cur && (cur.vehicle !== p.vehicle || cur.map !== p.map)) this.removeGhost(cur);   // switched rides or worlds: rebuilt next frame
           if (cur) Object.assign(cur, p);
           else this.players.set(p.id, { ...p });
         }
@@ -1154,7 +1383,7 @@ export class Game {
         break;
       case 'lobby': {
         const l = msg.lobby;
-        this.lobby = l ? { ...l, spotObj: this.world.spots[l.spot], endsAt: performance.now() + l.secondsLeft * 1000 } : null;
+        this.lobby = l ? { ...l, spotObj: this.island.spots[l.spot], endsAt: performance.now() + l.secondsLeft * 1000 } : null;
         const member = !!l && l.members.includes(this.selfId);
         this.ui.lobby(this.lobby, member, this.lobby && this.lobby.members.map((id) => this.players.get(id)?.name || '…'), () => this.toHost({ t: 'lobby_go' }),
           this.isHost ? (m) => this.toHost({ t: 'hunt_minutes', m }) : null);
@@ -1194,8 +1423,8 @@ export class Game {
 
   startRaceLocal(pub, participants, late) {
     this.ui.closeSpotPrompt();
-    const spot = this.world.spots[pub.spot];
-    const participant = !late && participants.includes(this.selfId);
+    const spot = this.island.spots[pub.spot];
+    const participant = !late && participants.includes(this.selfId) && this.map === 'island';
     this.race = {
       id: pub.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
       next: 0, startTime: 0, finished: false,
@@ -1203,7 +1432,7 @@ export class Game {
       standings: participants.map((id) => ({ id, cp: 0, time: null })),
     };
     this.markers?.dispose();
-    this.markers = participant ? new RaceMarkers(this.scene, spot, this.world.net.edges[spot.steps[0][0]].half > DIRT_HALF ? PAVED_HALF : DIRT_HALF + 1) : null;
+    this.markers = participant ? new RaceMarkers(this.scene, spot, this.island.net.edges[spot.steps[0][0]].half > DIRT_HALF ? PAVED_HALF : DIRT_HALF + 1) : null;
     if (participant) {
       this.nav = null;
       this.markers.setTarget(1);
@@ -1293,7 +1522,7 @@ export class Game {
     if (msg.cancelled) this.ui.toast('The race was called off.');
     else if (msg.standings.length) {
       if (msg.winner === this.selfId) this.sound?.finish(true);
-      this.ui.results(this.world.spots[msg.spot], this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
+      this.ui.results(this.island.spots[msg.spot], this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
     }
   }
 }

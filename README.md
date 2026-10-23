@@ -31,6 +31,13 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - **Hubless superbike:** leans into corners and pulls wheelies.
   - **Hypercar:** an original single-seater with a bubble canopy and a tall rear wing. It's faster and grippier, with no wheelies.
   - Switch any time outside a race. Your pick is remembered, and other players see your vehicle.
+- **The neon city (a second map).** A glowing pink portal stands across a road near where you start. Ride through it to reach a Tokyo-inspired city that's always night:
+  - A street grid round a central scramble crossing, alleys through the big blocks, and a ring road along a seawall above the bay.
+  - Shops at the edge, mid-rise blocks, and towers up to about 270 m, with lit windows, neon blade signs, shop signs, billboards and LED screens (all names invented).
+  - Wet streets that reflect the neon, and the city's own weather (drizzle, rain, fog, the odd thunderstorm).
+  - Buildings are solid; the map, GPS and R reset all work there. A green gate on the west side leads home.
+  - In the city your bike takes on a cyberpunk look (same handling), with a live speedo on its screen in first person.
+  - You only see riders in the same world as you, and both worlds are told when someone crosses. The rider list shows 🏝 or 🌃 by each name. The portal stays shut during races and Manhunt.
 - **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots).
   - **Lobby:** ride up and join. The host picks the round length (3, 5 or 8 min). It starts once at least 3 riders are in.
   - **Tagging:** one random rider is IT and gets a 5 s pause so the others can scatter. Touch a runner to pass IT on. The new IT waits 2 s and can't tag the person who tagged them for 3 s.
@@ -179,6 +186,7 @@ src/
     bike.js                the bike model, its tuning, cockpit speedometer
     physics.js             riding physics: grip, lean, suspension, collisions
     car.js                 the hypercar model and its tuning
+    cityBike.js            the bike's city look (loads public/models/cyberbike.glb)
     vehicles.js            the list of rides for the V menu
 
   modes/
@@ -209,6 +217,12 @@ src/
     style.css              all styling
 
   world/
+    portal.js              the portals between the island and the city
+    city/                  the neon city
+      cityGen.js           street grid, blocks, buildings, signs, lights (from the seed)
+      city.js              its meshes and shaders: buildings, wet streets, neon, glow
+      signs.js             the neon sign artwork (one atlas, drawn in code)
+      citySky.js           the night sky, haze and the city's weather
     climate/
       climate.js           world clock (20 ticks/s), weather forecast, snow + wet build-up
     generation/            pure maths, shared with the background worker
@@ -231,9 +245,11 @@ Where to look:
 - **How the island looks:** `src/world/`.
 - **Buttons and menus:** `index.html` and `src/ui/`.
 
-Inspired by the calm open-road feel of games like slowroads.io. All code and art here is original.
+Inspired by the calm open-road feel of games like slowroads.io. All code and art here is original, except the city bike model (see Credits).
 
 ## Credits
+
+- City bike model: "Cyberpunk bike" (https://skfb.ly/6RAYJ) by daCruz is licensed under Creative Commons Attribution-NonCommercial (http://creativecommons.org/licenses/by-nc/4.0/). `public/models/cyberbike.glb` is that model trimmed for the game (rescaled, wheels separated so they spin, texture saved as JPEG). It is **not** covered by this project's MIT license, and it may not be used commercially. If CruiseWay ever makes money (ads, paid versions, sponsorships), this model must be replaced first.
 
 - Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search uses the official YouTube Data API through the site's own `/api/search` function, with public [Invidious](https://invidious.io) servers as a last-resort fallback. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
 - Riding sound: the three recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`), an ElevenLabs-generated off-road clip (`engine-offroad.mp3`), and an ElevenLabs-generated car clip for the hypercar (`engine-car.mp3`). The other effects and the music are generated in code.
