@@ -2,9 +2,9 @@
 
 **▶ Play now: [cruiseway.vercel.app](https://cruiseway.vercel.app)**. It runs in the browser on any laptop or phone, with nothing to install (on phones you can also add it to your home screen as an app). See [CHANGELOG.md](CHANGELOG.md) for everything that's been built so far.
 
-An open-world island ride made to share with friends: hills under a day-night sky with changing weather, a whole network of roads and dirt tracks, race spots, and Manhunt arenas dotted around the map.
+An open-world island ride made to share with friends: hills under a day-night sky with changing weather, a whole network of roads and dirt tracks, race spots, and Manhunt arenas dotted around the map. Portals at either end of the island lead to Hikari, a neon city that's always night, with a rooftop parkour line across its skyline.
 
-Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together on a superbike or a hypercar. Other riders show up as see-through ghosts with name tags.
+Create a world, send the 5-letter code (or the invite link) to up to 5 friends, and ride together on a superbike or a hypercar. Other riders show up as see-through ghosts with name tags, drawn where they are right now.
 
 ## Features
 
@@ -15,7 +15,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
     - **Sunny:** the classic look.
     - **Cloudy:** a grey sky, the in-between weather before rain or snow and after it clears.
     - **Foggy:** thick fog, about 150 m of visibility.
-    - **Rainy:** rain, grey skies, and roads that turn dark and shiny with puddles.
+    - **Rainy:** rain, grey skies, and roads that turn dark and shiny with puddles. Drops fall straight down or slant with the wind, however fast you're going.
     - **Snowy:** snowflakes. If it keeps snowing for a few minutes, the grass, trees and roadsides turn white.
     - **Thunderstorm:** heavy rain, a dark sky, lightning bolts that light up the clouds, and rolling thunder that arrives after the flash.
   - The order is realistic, not random:
@@ -27,9 +27,14 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 - **A road network.** Paved roads meet at junctions, with dashed centre lines on straights and double lines through bends. Dirt roads and dead-end trails lead into the hills, and everywhere in between is open ground you can ride across.
 - **Same world for everyone.** The world seed decides everything (terrain, roads, trees and race spots), so every player builds the identical island on their own device. Terrain builds in a background worker with distance-based detail, so you can see about 2 km without stutter.
 - **The ride: an enclosed streamliner superbike.** Fat tyres, glowing hubless rims, and light strips in your colour. It leans into corners, and its suspension follows the ground smoothly. Grip differs on tarmac, dirt and grass. Tree trunks are solid. Ride into the sea and you're put back on the road.
+- **Jumps and landings.**
+  - In the air, W / S pitch the nose down / up and A / D roll, so you can line up your landing. Keys you were already holding at takeoff don't count until you let go, so keeping W down off a ramp won't send you in nose-first.
+  - The nose also follows the arc a little by itself, and a roll you let go of slowly rights itself.
+  - Land lined up with the ground and you keep your speed. Land crooked or very hard and you lose some (up to 40%).
+  - After a big drop the suspension squats and is damped harder for a moment, so it settles in one go.
 - **Two rides (V).**
   - **Hubless superbike:** leans into corners and pulls wheelies.
-  - **Hypercar:** an original single-seater with a bubble canopy and a tall rear wing. It's faster and grippier, with no wheelies.
+  - **Hypercar:** an original single-seater with a bubble canopy and a tall rear wing. It's faster and grippier, with no wheelies. At speed, the handbrake (Space) plus steering throws it into a drift: about 25° sideways at full lock, keeping most of your speed, with grip coming back as you let go.
   - Switch any time outside a race. Your pick is remembered, and other players see your vehicle.
 - **Hikari, the neon city (a second map).** Huge portals stand at the island's east and west ends. Ride through one to reach a Tokyo-inspired city that's always night:
   - The map came first, so it's easy to find your way:
@@ -48,9 +53,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - Buildings are solid, and the map, GPS and R reset all work there.
   - In the city your bike takes on a cyberpunk look (same handling), with a live speedo on its screen in first person.
   - You only see riders in the same world as you, and both worlds are told when someone crosses. The rider list shows 🏝 or 🌃 by each name. The portal stays shut during races and Manhunt.
+- **Theme song.** CruiseWay's theme, "Apex Pursuit", plays on the menus while you type your name and create or join a world. Pressing *Create & drive* or *Join* fades it out in under a second, so the world appears in silence. (Browsers only allow sound after your first tap or key press, so it may start then.) A menu left open in a background tab stays quiet.
 - **Drive line.** Chevrons on the road along your race or GPS route, coloured blue (keep going), yellow (ease off) or red (brake), from each bend's speed limit and your speed. On by default; Esc → General turns it off.
 - **Finish cinematic.** Crossing a race finish cuts to a short in-game cinematic of your ride: camera cuts, then fireworks. Skip, Space, Enter or Esc ends it, and then the results appear.
-- **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots).
+- **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots, and Scramble Square in Hikari).
   - **Lobby:** ride up and join. The host picks the round length (3, 5 or 8 min). It starts once at least 3 riders are in.
   - **Tagging:** one random rider is IT and gets a 5 s pause so the others can scatter. Touch a runner to pass IT on. The new IT waits 2 s and can't tag the person who tagged them for 3 s.
   - **The zone:** play is inside a holographic ring about 1 km across. It starts shrinking after 20 s and ends around 220 m.
@@ -58,7 +64,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - **Seeing each other:** runners see a red beacon over the IT, and the screen edge glows red when the IT is within 70 m. The IT's minimap only shows runners within 150 m, unless Radar is on.
   - **Winning:** whoever is IT when time runs out loses, and everyone else wins. Results show each rider's time as IT and tags made.
 - **Map and GPS.**
-  - Press <kbd>M</kbd> for a satellite-style map of the island.
+  - Press <kbd>M</kbd> for a satellite-style map of the island, or a night-time city guide in Hikari (with the Skyway in pink).
   - Click a race spot to see its card: length, checkpoints, twistiness, climbing, dirt %, and your best time. Manhunt arenas have their own card with the rules.
   - Press *Set route* for turn-by-turn GPS along the roads, or click anywhere on the map to drop a waypoint.
   - The minimap rotates with you and shows your route.
@@ -67,15 +73,17 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - The 3-5 star spots (Hard, Expert, Extreme) are race spots with a fixed route along the network. The 1-2 star spots are Manhunt arenas (see above).
   - Ride up to a spot and *READY TO RACE?* pops up. Accept, and a lobby opens for 15 seconds so friends can ride over and join. Any member can press *Start now*.
   - Then everyone spawns on the same start line for a frozen 3-2-1, then go.
-  - Holographic barriers line both sides of the route while you race, with room to run wide in bends. Brush one and you slide along it; hit one head-on and you lose a lot of speed. Racing is about clean lines, not shortcuts.
+  - While you race (or hunt), nothing else is on show: the other flags and the portals disappear from the world, the minimap and the map, and come back when it's over.
+  - Holographic barriers line both sides of the route while you race, standing 4.6 m beyond the road edge, so there's room to run wide in bends. Brush one and you slide along it; hit one head-on and you lose a lot of speed. Racing is about clean lines, not shortcuts.
   - Checkpoints count in order.
-  - <kbd>R</kbd> takes you back to your last checkpoint.
+  - <kbd>R</kbd> takes you back to your last checkpoint (in Hikari, to a short run-up before where you got to).
   - Results at the end, and the session leaderboard counts wins.
 - **Sound:**
   - The bike uses two recordings: one on tarmac and one on grass and dirt. They follow engine revs through a six-speed gearbox and crossfade as you leave or rejoin the road.
   - The hypercar uses its own recording, played as overlapping slices so it never audibly loops. It's softened by a gentle filter, follows the revs through a seven-speed gearbox, and swells in from quiet as you pull away.
   - Gear changes you can hear on both: a brief cut, a gearbox clunk, exhaust pops high in the revs, and a blip on downshifts.
   - Generated in code: thumps for landings, tree and barrier hits, and splashes; countdown beeps and checkpoint and finish chimes; rain, storm wind and thunder; a calm generative zen soundtrack.
+  - The theme song on the menus (see above).
   - Music and effects can each be turned on or off and set in volume in the Esc menu.
 - **Radio (Q):**
   - Search any song on YouTube and play it, free and with no sign-in. Or tune in to live internet radio stations from radio-browser.info.
@@ -129,7 +137,8 @@ There is no game server. The host's browser *is* the server:
 
 - The world code maps to the host's [PeerJS](https://peerjs.com) id.
 - Guests open a WebRTC data channel straight to the host.
-- The host relays positions 15 times a second and runs the roster, race lobbies and results.
+- The host relays positions 20 times a second and runs the roster, race lobbies and results.
+- Each update carries the rider's velocity, so their ghost keeps moving between updates and is drawn slightly ahead (to make up for the network delay). Small corrections blend in rather than jump, so in a race you can see who's really in front.
 - The free public PeerJS broker is used only to introduce browsers to each other.
 
 Because of this, the whole game deploys as static files, and the world closes when the host leaves.
@@ -184,7 +193,7 @@ Netlify, Cloudflare Pages and GitHub Pages would work the same way, since it's a
 ```
 index.html                 page shell: menus, HUD, overlays (markup only)
 src/
-  main.js                  entry point: wires menus, settings, cursor, map overlay
+  main.js                  entry point: wires menus, settings, cursor, map overlay, theme song
 
   core/                    the game itself
     game.js                main loop, cameras, ghosts, GPS, race spots,
