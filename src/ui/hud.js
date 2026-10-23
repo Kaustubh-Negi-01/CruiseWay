@@ -144,6 +144,7 @@ export class UI {
       raceFrom: s.race?.participant ? s.race.progressS : 0,
       raceNext: s.race?.participant ? s.race.next : 0,
       zone: s.hunt?.participant ? s.hunt.zone : null,
+      bare: !!s.race?.participant,   // racing or hunting: no other flags or portals on the maps
     };
     if (this.minimap && this.hudTick % 4 === 0) this.minimap.draw(mapState);
     if (this.bigMap && !$('#mapOverlay').classList.contains('hidden') && this.hudTick % 2 === 0) {

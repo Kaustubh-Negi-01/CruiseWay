@@ -38,6 +38,38 @@ addEventListener('keydown', unlockAudio);
 // a soft tick on every button press
 document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.click(); });
 
+// ---------------------------------------------------------------- theme song
+// CruiseWay's theme plays on the menus (name, world code, loading) and fades
+// away as the ride begins. Browsers only allow sound after a first tap or
+// key press, so it starts then if it couldn't start straight away.
+const theme = new Audio('/audio/theme.m4a');
+theme.loop = true;
+theme.preload = 'auto';
+let themeWanted = true;
+const themeVolume = () => {
+  const s = sound.settings;
+  return s.musicOn ? Math.min(1, s.master * Math.max(0.35, s.music) * 0.85) : 0;
+};
+function startTheme() {
+  if (!themeWanted || !theme.paused) return;
+  theme.volume = themeVolume();
+  if (theme.volume > 0) theme.play().then(() => sound.setDuck(true)).catch(() => {});
+}
+for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, startTheme);
+startTheme();
+function fadeTheme() {
+  themeWanted = false;
+  if (theme.paused) return;
+  const v0 = theme.volume, t0 = performance.now();
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / 2500);
+    theme.volume = v0 * (1 - k) * (1 - k);
+    if (k < 1) requestAnimationFrame(step);
+    else { theme.pause(); sound.setDuck(false); }
+  };
+  step();
+}
+
 // ---------------------------------------------------------------- menu
 
 $('#name').value = store.get('name', '');
@@ -147,6 +179,7 @@ async function joinWorld(code) {
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#doJoin').click(); });
 
 function enterGame({ net, seed, code, welcome }) {
+  fadeTheme();
   $('#menu').classList.add('hidden');
   $('#hud').classList.remove('hidden');
   ui.setWorldCode(code);

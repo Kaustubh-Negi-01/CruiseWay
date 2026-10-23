@@ -21,10 +21,10 @@ import { loadCityBike } from '../vehicle/cityBike.js';
 import { signAtlas } from '../world/city/signs.js';
 import { PAVED_HALF, DIRT_HALF, KIND_DIRT } from '../world/generation/network.js';
 
-const SEND_HZ = 15;
+const SEND_HZ = 20;
 const CLOCK_EVERY = SEND_HZ * 5;   // host re-sends the world clock every 5 s
 const HEADLIGHT = 140;            // headlight intensity at night
-const INTERP_DELAY = 140;   // ms behind newest snapshot when rendering ghosts
+const GHOST_LEAD = 0.06;   // s: other riders are drawn this far ahead of their last snapshot (network delay)
 const CP_RADIUS = 22;
 const SPOT_RADIUS = 22;     // how close counts as "arrived" at a race spot
 const LOBBY_SECONDS = 15;   // gathering window before a race (any member can start early)
@@ -657,9 +657,15 @@ export class Game {
       if (this.cine.done) this.endFinishCine();
     }
     this.weather.update(dt, this.camera, this.wx, this.env.envLevel, this.renderer.domElement.height, this.headlight.intensity / HEADLIGHT);
-    this.updateGhosts(now);
+    this.updateGhosts(now, dt);
+    // racing or hunting: nothing else on show (other flags, portals)
+    const focus = !!this.race?.participant;
+    if (this.world.beacons) this.world.beacons.visible = !focus;
     let near = Infinity;
-    for (const p of this.bundle().portals) near = Math.min(near, p.update(dt, this.camera.position));
+    for (const p of this.bundle().portals) {
+      p.group.visible = !focus;
+      near = Math.min(near, p.update(dt, this.camera.position));
+    }
     portalVideoActive(near < 900);
     this.checkPortal(now);
     if (this.race) { if (this.race.mode === 'hunt') this.hunt.update(now, dt); else this.updateRace(now); }
@@ -1096,34 +1102,40 @@ export class Game {
 
   // ---- ghosts -----------------------------------------------------------------
 
-  updateGhosts(now) {
-    const renderT = now - INTERP_DELAY;
+  // Other riders are drawn where they are now, not where they were: each
+  // snapshot carries a velocity, so the ghost keeps moving between snapshots
+  // (and a little ahead, to make up for the network delay), and small
+  // corrections are blended in instead of jumping. In a race you see who's
+  // really in front.
+  updateGhosts(now, dt) {
+    const k = (rate) => 1 - Math.exp(-dt * rate);
     for (const p of this.players.values()) {
       if (p.id === this.selfId || !p.buf || p.buf.length === 0) continue;
       // riders in the other world aren't here at all
       if ((p.map || 'island') !== this.map) { if (p.ghost) this.removeGhost(p); continue; }
-      if (!p.ghost) this.makeGhost(p);
-      const buf = p.buf;
-      let a = buf[0], b = buf[0];
-      for (let i = buf.length - 1; i >= 0; i--) {
-        if (buf[i].t <= renderT) { a = buf[i]; b = buf[i + 1] || buf[i]; break; }
+      const fresh = !p.ghost;
+      if (fresh) this.makeGhost(p);
+      const last = p.buf[p.buf.length - 1], s = last.s, u = s.u || [0, 0, 0];
+      const age = Math.min(0.35, (now - last.t) / 1000) + GHOST_LEAD;
+      const tx = s.p[0] + u[0] * age, ty = s.p[1] + u[1] * age, tz = s.p[2] + u[2] * age;
+      const g = p.ghost, pos = g.position;
+      if (fresh || (pos.x - tx) ** 2 + (pos.z - tz) ** 2 > 25 * 25) pos.set(tx, ty, tz);   // first sight, or a teleport
+      else {
+        // move with their speed, then ease out whatever error is left
+        pos.x += u[0] * dt; pos.y += u[1] * dt; pos.z += u[2] * dt;
+        pos.x += (tx - pos.x) * k(9); pos.y += (ty - pos.y) * k(9); pos.z += (tz - pos.z) * k(9);
       }
-      const t = b === a ? 0 : Math.min(1, (renderT - a.t) / (b.t - a.t));
-      const g = p.ghost;
-      g.position.set(
-        a.s.p[0] + (b.s.p[0] - a.s.p[0]) * t,
-        a.s.p[1] + (b.s.p[1] - a.s.p[1]) * t,
-        a.s.p[2] + (b.s.p[2] - a.s.p[2]) * t,
-      );
-      p.qa.set(...a.s.q); p.qb.set(...b.s.q);
-      g.quaternion.slerpQuaternions(p.qa, p.qb, t);
+      p.qb.set(...s.q);
+      if (fresh) g.quaternion.copy(p.qb); else g.quaternion.slerp(p.qb, k(14));
       const ud = g.userData;
-      poseLean(ud.lean, a.s.l + (b.s.l - a.s.l) * t, (a.s.w || 0) + ((b.s.w || 0) - (a.s.w || 0)) * t, vehicleFor(p.vehicle, this.map).spec.rearZ);
-      const sa = (a.s.st || 0) * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - Math.abs(a.s.v) / 30);
-      for (const st of ud.steerers || [ud.steerer]) st.rotation.y = sa;
-      p.spin = (p.spin || 0) + (a.s.v / 0.37) * (1 / 60);
+      p.lean = fresh ? s.l : p.lean + (s.l - p.lean) * k(10);
+      p.wh = fresh ? (s.w || 0) : p.wh + ((s.w || 0) - p.wh) * k(10);
+      poseLean(ud.lean, p.lean, p.wh, vehicleFor(p.vehicle, this.map).spec.rearZ);
+      const sa = (s.st || 0) * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - Math.abs(s.v) / 30);
+      for (const st of ud.steerers || [ud.steerer]) st.rotation.y += (sa - st.rotation.y) * k(12);
+      p.spin = (p.spin || 0) + (s.v / 0.37) * dt;
       for (const w of ud.wheels) w.rotation.x = p.spin;
-      while (buf.length > 2 && buf[1].t < renderT) buf.shift();
+      if (p.buf.length > 2) p.buf.splice(0, p.buf.length - 2);
     }
   }
 

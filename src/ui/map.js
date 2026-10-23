@@ -252,12 +252,12 @@ export class MapView {
     if (o.gps) this.path(o.gps.pts, '#38e8ff', Math.max(3.5, 6 * Math.min(1, this.scale * 4)));
 
     // spots
-    for (const s of this.world.spots) this.spotIcon(s, s === o.selected, o.race === s);
+    if (!o.bare) for (const s of this.world.spots) this.spotIcon(s, s === o.selected, o.race === s);
     if (o.race) {
       o.race.checkpoints.forEach((cs, i) => { if (i >= (o.raceNext || 0)) this.dot(o.race.route.at(cs), '#ffcf3a', 4, '#111'); });
       this.flag(o.race.route.at(o.race.route.length - 1), '#ffffff', 'F');
     }
-    for (const p of this.world.portals || []) this.gate(p);
+    if (!o.bare) for (const p of this.world.portals || []) this.gate(p);
     if (o.waypoint) this.pin(o.waypoint);
     if (o.zone) {
       // the Manhunt zone

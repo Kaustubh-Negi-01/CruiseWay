@@ -13,6 +13,7 @@ export const CAR = {
   dirtGrip: 7.2, dirtTop: 0.9, dirtDrag: 0.06,
   offGrip: 5.6, offTop: 0.8, offDrag: 0.14,
   steer: 1.55, handbrakeGrip: 1.3,
+  driftGrip: 2.2,    // sideways grip while drifting (handbrake + steer at speed)
   camDist: 6.6, camHeight: 2.1,
   rearZ: -1.38,
   lean: -0.09,       // body roll per radian of bike-style lean (cars roll outward, a little)
