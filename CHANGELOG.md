@@ -10,10 +10,10 @@ Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
   - Blue: keep going. Yellow: ease off. Red: brake now. Colours come from how fast each bend can be taken and how far you need to brake, compared with your speed.
   - Turn it off in Esc → General.
 - **Wider race walls.** They now stand 4.6 m beyond the road edge (was 2.8 m), so there's more room to run wide.
-- **Finish films.** Cross the line and a short film plays full screen with its sound: the car version or the bike version, whichever you're riding.
-  - Skip, Space, Enter or Esc ends it.
-  - The ride sounds go quiet while it plays, and the results appear after it.
-  - Each film (about 5 MB) is only fetched once you're in a race.
+- **Finish cinematic.** Cross the line and the game cuts to a short cinematic of your own ride, made in the game (inspired by the project owner's reference clips):
+  - a low shot from behind, a close-up tracking the wheel, a shot from ahead as you come through, then a high circling shot with fireworks;
+  - letterbox bars and the race name; your ride coasts on and follows the road by itself;
+  - Skip, Space, Enter or Esc ends it, and the results appear after it. Nothing extra to download.
 
 ## 1.7 · Hikari: a city you can find your way round · 23 Oct 2026
 

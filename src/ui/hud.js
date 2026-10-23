@@ -80,48 +80,30 @@ export class UI {
     this.bigMap?.setWorld(world);
   }
 
-  // ---- race-finish film ---------------------------------------------------------
+  // ---- race-finish cinematic -------------------------------------------------------
 
-  // Start fetching the film early, so it's ready when you cross the line.
-  preloadFinish(src) {
-    const v = $('#finishVideo');
-    if (v.getAttribute('src') === src) return;
-    v.src = src;
-    v.preload = 'auto';
-    v.load();
-  }
-
-  // Full screen, with its own sound; Skip, Space, Enter or Esc ends it early.
-  finishFx(src, volume, done) {
-    const box = $('#finishFx'), v = $('#finishVideo');
-    if (v.getAttribute('src') !== src) v.src = src;
-    v.currentTime = 0;
-    v.volume = Math.min(1, Math.max(0, volume));
-    v.muted = volume <= 0;
+  // Letterbox bars and a title while the finish cinematic plays; Skip,
+  // Space, Enter or Esc calls skip().
+  cineBars(on, title = '', skip = null) {
+    const box = $('#finishFx');
+    removeEventListener('keydown', this.cineKey, true);
+    if (!on) {
+      box.classList.add('closing');
+      setTimeout(() => { box.classList.add('hidden'); box.classList.remove('closing'); }, 380);
+      document.body.classList.remove('cine');
+      return;
+    }
+    $('#finishTitle').textContent = title;
     box.classList.remove('hidden', 'closing');
-    let over = false;
-    const key = (e) => {
+    document.body.classList.add('cine');
+    this.cineKey = (e) => {
       if (e.code !== 'Space' && e.code !== 'Enter' && e.code !== 'Escape') return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      end();
+      skip?.();
     };
-    const end = () => {
-      if (over) return;
-      over = true;
-      clearTimeout(cap);
-      v.onended = null;
-      removeEventListener('keydown', key, true);
-      v.pause();
-      box.classList.add('closing');
-      setTimeout(() => { box.classList.add('hidden'); box.classList.remove('closing'); }, 380);
-      done?.();
-    };
-    v.onended = end;
-    $('#finishSkip').onclick = (e) => { e.stopPropagation(); end(); };
-    addEventListener('keydown', key, true);
-    const cap = setTimeout(end, 12000);   // never longer than the film
-    v.play().catch(() => { v.muted = true; v.play().catch(end); });
+    addEventListener('keydown', this.cineKey, true);
+    $('#finishSkip').onclick = (e) => { e.stopPropagation(); skip?.(); };
   }
 
   // the flash as you go through a portal

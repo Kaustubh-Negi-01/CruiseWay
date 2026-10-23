@@ -48,7 +48,7 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - In the city your bike takes on a cyberpunk look (same handling), with a live speedo on its screen in first person.
   - You only see riders in the same world as you, and both worlds are told when someone crosses. The rider list shows 🏝 or 🌃 by each name. The portal stays shut during races and Manhunt.
 - **Drive line.** Chevrons on the road along your race or GPS route, coloured blue (keep going), yellow (ease off) or red (brake), from each bend's speed limit and your speed. On by default; Esc → General turns it off.
-- **Finish films.** Crossing a race finish plays a short full-screen film (car or bike version) with its sound. Skip, Space, Enter or Esc ends it, and then the results appear.
+- **Finish cinematic.** Crossing a race finish cuts to a short in-game cinematic of your ride: camera cuts, then fireworks. Skip, Space, Enter or Esc ends it, and then the results appear.
 - **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots).
   - **Lobby:** ride up and join. The host picks the round length (3, 5 or 8 min). It starts once at least 3 riders are in.
   - **Tagging:** one random rider is IT and gets a 5 s pause so the others can scatter. Touch a runner to pass IT on. The new IT waits 2 s and can't tag the person who tagged them for 3 s.
@@ -207,6 +207,7 @@ src/
   race/
     markers.js             start / checkpoint / finish gates and beacon
     driveLine.js           the drive line: chevrons along a race or GPS route
+    finishCine.js          the race-finish cinematic: camera shots and fireworks
     barriers.js            holographic race walls + keeping racers inside them
 
   radio/
@@ -266,6 +267,5 @@ Inspired by the calm open-road feel of games like slowroads.io. All code and art
 - City bike model: "Cyberpunk bike" (https://skfb.ly/6RAYJ) by daCruz is licensed under Creative Commons Attribution-NonCommercial (http://creativecommons.org/licenses/by-nc/4.0/). `public/models/cyberbike.glb` is that model trimmed for the game (rescaled, wheels separated so they spin, texture saved as JPEG). It is **not** covered by this project's MIT license, and it may not be used commercially. If CruiseWay ever makes money (ads, paid versions, sponsorships), this model must be replaced first.
 
 - Radio: songs play through the official [YouTube](https://www.youtube.com) embedded player, so they're streamed by YouTube, with its ads and rules. Search uses the official YouTube Data API through the site's own `/api/search` function, with public [Invidious](https://invidious.io) servers as a last-resort fallback. Live stations come from the community directory [radio-browser.info](https://www.radio-browser.info). No music is bundled with the game.
-- Finish films: `public/video/finish-car.mp4` and `public/video/finish-bike.mp4` were supplied by the project owner (AI-generated clips), unchanged.
 - Portal: `public/video/portal.mp4` is a clip supplied by the project owner, cropped to the ring, faded to black round it and re-encoded for the game.
 - Riding sound: the three recordings in `public/audio/` were supplied by the project owner: a sportbike riding foley clip (`engine-road.mp3`), an ElevenLabs-generated off-road clip (`engine-offroad.mp3`), and an ElevenLabs-generated car clip for the hypercar (`engine-car.mp3`). The other effects and the music are generated in code.

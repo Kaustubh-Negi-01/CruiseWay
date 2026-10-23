@@ -10,6 +10,7 @@ import { vehicleFor } from '../vehicle/vehicles.js';
 import { RaceMarkers } from '../race/markers.js';
 import { RaceBarriers } from '../race/barriers.js';
 import { DriveLine, pathFromRoute, pathFromPoints } from '../race/driveLine.js';
+import { FinishCine } from '../race/finishCine.js';
 import { Manhunt, HUNT } from '../modes/manhunt.js';
 import { buzz } from '../mobile/mobile.js';
 import { City } from '../world/city/city.js';
@@ -641,7 +642,8 @@ export class Game {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
 
-    const inp = this.input.read();
+    // during the finish cinematic the ride steers itself along the route
+    const inp = this.cine ? this.cineInput() : this.input.read();
     this.car.update(dt, inp);
     const c = this.car;
     this.sound?.update({ speed: c.speed, throttle: c.frozen ? 0 : inp.throttle, braking: c.braking, slip: c.slip, surface: c.surface, onGround: c.onGround, lean: c.lean });
@@ -650,6 +652,10 @@ export class Game {
     this.updateClimate();
     this.env.update(dt, this.car.pos);
     this.updateCamera(dt);
+    if (this.cine) {
+      this.cine.update(dt, this.car, this.camera);
+      if (this.cine.done) this.endFinishCine();
+    }
     this.weather.update(dt, this.camera, this.wx, this.env.envLevel, this.renderer.domElement.height, this.headlight.intensity / HEADLIGHT);
     this.updateGhosts(now);
     let near = Infinity;
@@ -1514,7 +1520,6 @@ export class Game {
       this.car.frozen = true;
       this.ui.toast(`${spot.name} · ${(spot.length / 1000).toFixed(1)} km — get ready`);
       // the finish film for your ride, fetched while you race
-      if (spot.mode !== 'hunt') this.ui.preloadFinish?.(this.finishFilm());
       setTimeout(() => this.toHost({ t: 'race_ready', id: pub.id }), 600);
     } else {
       this.ui.toast(`A race is running at ${spot.name}.`);
@@ -1571,7 +1576,7 @@ export class Game {
     this.car.constraint = null;
     this.ui.flash('Finished · ' + fmtTime(r.elapsed));
     this.sound?.finish(false);
-    this.playFinishFilm();
+    this.startFinishCine();
     const best = this.bestTimes[r.spot.id];
     if (best == null || r.elapsed < best) this.bestTimes[r.spot.id] = r.elapsed;
     this.toHost({ t: 'race_finish', id: r.id, time: r.elapsed });
@@ -1594,34 +1599,51 @@ export class Game {
         this.ui.results(this.spotById(msg.spot), this.namedStandings(msg.standings), msg.winner === this.selfId, msg.standings.length === 1);
       };
       // the results wait until the finish film is over
-      if (this.filmPlaying) this.afterFilm = show;
+      if (this.cine) this.afterFilm = show;
       else show();
     }
   }
 }
 
-// The race-finish film for the ride you're on (supplied by the project owner).
-Game.prototype.finishFilm = function () {
-  return this.vehicle === 'car' ? '/video/finish-car.mp4' : '/video/finish-bike.mp4';
+// Over the line: a short cinematic of your own ride (camera cuts, then
+// fireworks; see finishCine.js). Skip with Space, Enter, Esc or the button.
+// Race results wait until it's over.
+Game.prototype.startFinishCine = function () {
+  if (this.cine) return;
+  const r = this.race;
+  this.cineRoute = r?.spot.route || null;
+  this.cineS = r ? r.spot.route.length : 0;
+  this.cine = new FinishCine(this.scene);
+  this.ui.cineBars?.(true, r ? r.spot.name : '', () => this.endFinishCine());
 };
 
-// Over the line: the finish film plays full screen (skippable). The ride
-// sounds go quiet and your ride waits until it's over.
-Game.prototype.playFinishFilm = function () {
-  if (!this.ui.finishFx) return;
-  const s = this.sound?.settings;
-  const volume = s ? s.master * (s.effectsOn ? Math.max(0.35, s.effects) : 0) : 0.8;
-  this.sound?.hush(true);
-  this.car.frozen = true;
-  this.filmPlaying = true;
-  this.ui.finishFx(this.finishFilm(), volume, () => {
-    this.filmPlaying = false;
-    this.sound?.hush(false);
-    if (!this.race || this.race.finished) this.car.frozen = false;
-    const next = this.afterFilm;
-    this.afterFilm = null;
-    next?.();
-  });
+Game.prototype.endFinishCine = function () {
+  if (!this.cine) return;
+  this.cine.dispose();
+  this.cine = null;
+  this.camPos = null;
+  this.ui.cineBars?.(false);
+  const next = this.afterFilm;
+  this.afterFilm = null;
+  next?.();
+};
+
+// The ride coasts on past the line, easing off and following the road.
+Game.prototype.cineInput = function () {
+  const c = this.car, route = this.cineRoute;
+  let steer = 0;
+  if (route) {
+    // aim at the road a little ahead (the route, or past its end straight on)
+    const q = route.nearestS(c.pos.x, c.pos.z, this.cineS, 120);
+    this.cineS = q.s;
+    const a = route.at(Math.min(route.length - 0.1, q.s + 14));
+    const tx = q.s > route.length - 15 ? c.pos.x + Math.sin(c.yaw) * 14 : a.x, tz = q.s > route.length - 15 ? c.pos.z + Math.cos(c.yaw) * 14 : a.z;
+    let d = Math.atan2(tx - c.pos.x, tz - c.pos.z) - c.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    steer = Math.max(-1, Math.min(1, d * 2.5));
+  }
+  const fast = Math.abs(c.forwardSpeed) > 22;
+  return { steer, throttle: fast ? 0 : 0.35, brake: fast ? 0.15 : 0, handbrake: false, wheelie: false };
 };
 
 export function fmtTime(t) {
