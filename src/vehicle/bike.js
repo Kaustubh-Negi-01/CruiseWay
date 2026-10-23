@@ -15,6 +15,7 @@ export const BIKE = {
   camDist: 5.0, camHeight: 1.7,
   rearZ: -0.88,      // rear axle position along the bike (wheelies pivot here)
   contacts: [[0, 0.88], [0, -0.88]],   // tyre contact points (x across, z along)
+  body: [0.55, -0.55],                 // centres of the collision circles along the bike (radius 0.35)
 };
 
 // glow colours handed out to players in join order
@@ -386,6 +387,8 @@ export function ghostify(root) {
     if (!o.isMesh) return;
     o.castShadow = false;
     o.receiveShadow = false;
+    // outlined models (the city bike) stay solid: see-through would show the outline shell
+    if (o.material.userData.noGhost) return;
     const m = o.material.clone();
     m.onBeforeCompile = o.material.onBeforeCompile;
     m.customProgramCacheKey = o.material.customProgramCacheKey;
@@ -402,10 +405,10 @@ export function disposeModel(root) {
   root.traverse((o) => {
     if (!o.isMesh) return;
     if (!o.geometry.userData.shared) o.geometry.dispose();   // shared shapes (car tyres) stay
-    if (!seen.has(o.material)) {
+    if (!seen.has(o.material) && !o.material.userData.shared) {
       seen.add(o.material);
       const map = o.material.map;
-      if (map && map !== GLOW_TEX && map !== TREAD) map.dispose();
+      if (map && map !== GLOW_TEX && map !== TREAD && !map.userData.shared) map.dispose();
       o.material.dispose();
     }
   });

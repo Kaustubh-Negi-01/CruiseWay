@@ -11,24 +11,29 @@ import { spotStyle } from '../world/generation/spots.js';
 // heading-up.
 
 const COMP = 2048;                       // composite image size
-const M_PER_PX = (MAP_EXTENT * 2) / COMP;
 
-// Shared per world: one composite used by every MapView.
+// Shared per world: one composite used by every MapView. The city paints its
+// own picture (world.extent says how much ground it covers).
 const composites = new WeakMap();
 function compositeFor(world) {
   let c = composites.get(world);
   if (c) return c;
-  c = { canvas: document.createElement('canvas'), ready: false };
+  const extent = world.extent || MAP_EXTENT;
+  c = { canvas: document.createElement('canvas'), ready: false, extent, mpp: (extent * 2) / COMP, bg: world.extent ? '#0a0f22' : '#1b4a54' };
   c.canvas.width = c.canvas.height = COMP;
-  paint(c.canvas, world, null);
-  world.onMapReady((terrain) => { paint(c.canvas, world, terrain); c.ready = true; });
+  if (world.extent) {
+    world.onMapReady((pic) => { c.canvas.getContext('2d').drawImage(pic, 0, 0, COMP, COMP); c.ready = true; });
+  } else {
+    paint(c.canvas, world, null, c);
+    world.onMapReady((terrain) => { paint(c.canvas, world, terrain, c); c.ready = true; });
+  }
   composites.set(world, c);
   return c;
 }
 
-function toImg(x, z) { return [(MAP_EXTENT - x) / M_PER_PX, (MAP_EXTENT - z) / M_PER_PX]; }
+function toImg(x, z, c) { return [(c.extent - x) / c.mpp, (c.extent - z) / c.mpp]; }
 
-function paint(canvas, world, terrain) {
+function paint(canvas, world, terrain, comp) {
   const g = canvas.getContext('2d');
   if (terrain) {
     g.imageSmoothingEnabled = true;
@@ -43,10 +48,10 @@ function paint(canvas, world, terrain) {
   const trace = (e) => {
     g.beginPath();
     for (let i = 0; i < e.n; i += 4) {
-      const [u, v] = toImg(e.x[i], e.z[i]);
+      const [u, v] = toImg(e.x[i], e.z[i], comp);
       if (i === 0) g.moveTo(u, v); else g.lineTo(u, v);
     }
-    const [u, v] = toImg(e.x[e.n - 1], e.z[e.n - 1]);
+    const [u, v] = toImg(e.x[e.n - 1], e.z[e.n - 1], comp);
     g.lineTo(u, v);
   };
   // dirt first (under), then paved with a dark casing
@@ -104,7 +109,14 @@ export class MapView {
   fitIsland() {
     this.follow = false;
     this.cx = 0; this.cz = 0;
-    this.scale = (Math.min(this.cv.width, this.cv.height) * 0.95) / (MAP_EXTENT * 2);
+    this.scale = (Math.min(this.cv.width, this.cv.height) * 0.95) / (this.comp.extent * 2);
+  }
+
+  // The other world: same view settings, its own picture.
+  setWorld(world) {
+    this.world = world;
+    this.comp = compositeFor(world);
+    this.follow = true;
   }
 
   attach() {
@@ -218,12 +230,12 @@ export class MapView {
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     if (this.round) { ctx.beginPath(); ctx.arc(W / 2, H / 2, W / 2, 0, Math.PI * 2); ctx.clip(); }
-    ctx.fillStyle = '#1b4a54';
+    ctx.fillStyle = this.comp.bg;
     ctx.fillRect(0, 0, W, H);
 
     // satellite composite
-    const [u, v] = toImg(this.cx, this.cz);
-    const k = this.scale * M_PER_PX;
+    const [u, v] = toImg(this.cx, this.cz, this.comp);
+    const k = this.scale * this.comp.mpp;
     ctx.save();
     ctx.translate(W / 2, H / 2);
     ctx.rotate(this.rot);
@@ -244,6 +256,7 @@ export class MapView {
       o.race.checkpoints.forEach((cs, i) => { if (i >= (o.raceNext || 0)) this.dot(o.race.route.at(cs), '#ffcf3a', 4, '#111'); });
       this.flag(o.race.route.at(o.race.route.length - 1), '#ffffff', 'F');
     }
+    if (this.world.portal) this.gate(this.world.portal);
     if (o.waypoint) this.pin(o.waypoint);
     if (o.zone) {
       // the Manhunt zone
@@ -371,6 +384,30 @@ export class MapView {
     ctx.textAlign = 'center';
     ctx.fillText(letter, sx, sy + 4);
     ctx.textAlign = 'start';
+  }
+
+  // the portal to the other world
+  gate(p) {
+    const ctx = this.ctx;
+    const [x, y] = this.toScreen(p.x, p.z);
+    const city = !!this.world.extent;
+    const col = city ? '#7dff9a' : '#ff2e88';
+    ctx.save();
+    ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.strokeStyle = col; ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = city ? 'rgba(125,255,154,0.35)' : 'rgba(255,46,136,0.35)';
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    if (this.scale > 0.06) {
+      const label = city ? 'Portal to the island' : 'Portal to the neon city';
+      ctx.font = '700 12px system-ui, sans-serif';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(label, x + 14, y + 4);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x + 14, y + 4);
+    }
+    ctx.restore();
   }
 
   pin(p) {

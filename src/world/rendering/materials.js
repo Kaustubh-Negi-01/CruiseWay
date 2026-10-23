@@ -157,7 +157,7 @@ export function textures() {
 
 // ---- shader patching --------------------------------------------------------------
 
-const HAZE_PARS = /* glsl */`
+export const HAZE_PARS = /* glsl */`
   uniform vec3 uSunDir; uniform vec3 uFogColor; uniform vec3 uSunFogColor; uniform float uFogDensity;
   uniform float uSnow; uniform float uWet;
   varying vec3 vWPos;
@@ -166,7 +166,7 @@ const HAZE_PARS = /* glsl */`
     return mix(uFogColor, uSunFogColor, pow(s, 5.0) * 0.9);
   }`;
 
-const HAZE_FRAG = /* glsl */`
+export const HAZE_FRAG = /* glsl */`
   {
     vec3 toP = vWPos - cameraPosition;
     float fd = length(toP);

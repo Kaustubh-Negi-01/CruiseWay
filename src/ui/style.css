@@ -72,6 +72,7 @@ input:focus { border-color: var(--accent); }
 #roster .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #roster .me .nm { font-weight: 700; }
 #roster .wins { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
+#roster .where { font-size: 12px; opacity: .85; }
 #roster .head { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 #hostTools { display: flex; flex-direction: column; gap: 6px; }
 #inviteStatus { background: var(--panel); border-radius: 10px; font-size: 13px; padding: 0; }
@@ -459,3 +460,13 @@ body.mobile .map-top { top: 8px; left: 10px; right: 10px; font-size: 12px; }
 body.mobile .map-top h2 { font-size: 18px; }
 body.mobile .map-legend { bottom: 8px; left: 8px; right: 8px; flex-wrap: wrap; gap: 6px; font-size: 11px; }
 body.mobile #spotCard { max-height: calc(100vh - 90px); overflow: auto; right: 8px; top: 44px; width: min(300px, 46vw); }
+
+/* riding through a portal: a burst of light that fills the screen and fades */
+#warp { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 30;
+  background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.95) 0%, rgba(255,70,180,.75) 24%, rgba(40,220,255,.4) 52%, rgba(10,5,20,0) 78%); }
+#warp.go { animation: warp .95s ease-out; }
+@keyframes warp {
+  0% { opacity: 0; transform: scale(.4); }
+  16% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0; transform: scale(2.4); }
+}

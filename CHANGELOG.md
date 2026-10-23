@@ -2,7 +2,23 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, and 0.8–1.4 on 22 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6 on 23 October 2026.
+
+## 1.6 · The neon city · 23 Oct 2026
+
+- **A portal on the island.** A glowing pink arch stands across a road a few hundred metres from where you start. It's on the map, and a light beam marks it from far away. Ride through it either way to travel.
+- **The neon city, a second map.** About 1.1 km across, always night, inspired by Tokyo after dark (every name and sign is invented):
+  - A street grid round a central scramble crossing with diagonal zebras, avenues with yellow centre lines, side streets, narrow alleys through the big blocks, and a ring road along a seawall, with the bay and a distant skyline beyond.
+  - About 1,700 buildings: small shops at the edge, mid-rise blocks, and a ring of towers up to about 270 m round the centre, with lit windows that switch on and off, shop fronts and glowing crowns.
+  - Neon everywhere: vertical blade signs, shop signs, big billboards and animated LED screens, some with a dying tube that flickers. Street lights and vending machines line the sidewalks.
+  - Wet streets that reflect the signs and buildings, and coloured light pooling on the road.
+  - Its own weather on the shared clock: clear nights, drizzle, rain, fog and the odd thunderstorm.
+  - Buildings, vending machines, street lights and the seawall are solid. The chase camera pulls in rather than look through a wall.
+  - It has its own map and minimap, and GPS routes and R (back to the road) work there too. A green gate on the west side leads back to the island.
+- **Your bike's city look.** In the city the bike becomes "Cyberpunk bike" by daCruz, with the same handling. The wheels spin and steer, your colour glows underneath, and in first person its screen shows your real speed. The model is only downloaded when you head for the city (1.3 MB, trimmed from 3.1 MB). The car looks the same in both worlds.
+- **Each rider travels alone.** You only see riders in the same world as you. When someone crosses, the world they left is told (for example "Ravi warped into the neon city") and so is the one they arrive in ("Ravi rolled in from the island"). The rider list shows 🏝 or 🌃 next to each name.
+- **Races and Manhunt stay on the island.** The portal stays shut while you're in a race or a hunt, and riding through it takes you out of a lobby you were waiting in. New riders always start on the island.
+- **Smooth on every device.** The city is built a little at a time in quiet moments soon after you join, so the trip through the portal is instant. It's about 50 draw calls, with its glow faked rather than lit. On the Low preset only the signs are reflected, and on Eco nothing is.
 
 ## 1.5 · Radio search fixed · 22 Oct 2026
 

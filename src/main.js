@@ -6,7 +6,7 @@ import { RadioPanel } from './ui/radioPanel.js';
 import { Input } from './core/input.js';
 import { Net, normalizeCode } from './network/net.js';
 import { MapView } from './ui/map.js';
-import { VEHICLES } from './vehicle/vehicles.js';
+import { VEHICLES, vehicleFor } from './vehicle/vehicles.js';
 import { IS_MOBILE, setupMobile, keepAwake } from './mobile/mobile.js';
 import { TouchControls } from './mobile/touchControls.js';
 
@@ -206,7 +206,8 @@ game.setVehicle(store.get('vehicle', 'bike'));
 function renderGarage() {
   const list = $('#garageList');
   list.innerHTML = '';
-  Object.entries(VEHICLES).forEach(([kind, v], i) => {
+  Object.keys(VEHICLES).forEach((kind, i) => {
+    const v = vehicleFor(kind, game.map);   // in the city the bike shows its city look
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'garage-item' + (game.vehicle === kind ? ' on' : '');
@@ -221,7 +222,7 @@ function renderGarage() {
 function pickVehicle(kind) {
   if (game.setVehicle(kind)) {
     store.set('vehicle', kind);
-    ui.toast(`Now riding the ${VEHICLES[kind].label.toLowerCase()}.`);
+    ui.toast(`Now riding the ${vehicleFor(kind, game.map).label.toLowerCase()}.`);
     $('#garage').classList.add('hidden');
   }
 }

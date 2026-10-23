@@ -370,6 +370,17 @@ export class SoundManager {
     f.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.8);
   }
 
+  // riding through a portal: a rising rush of air, a low thump and a shimmer
+  portal() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const f = this.burst(0.45, 1.2, 'bandpass', 350, 1.1);
+    f.frequency.exponentialRampToValueAtTime(3200, t + 0.45);
+    f.frequency.exponentialRampToValueAtTime(500, t + 1.15);
+    this.thump(7, 55);
+    this.chime([392, 587.33, 880, 1174.66], 0.06, 0.07, 1.3);
+  }
+
   // short bell-like notes for race moments
   chime(freqs, spacing = 0.09, level = 0.18, decay = 0.9) {
     if (!this.ctx) return;

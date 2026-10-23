@@ -244,6 +244,7 @@ export class Bike {
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.collideTrees();
+    if (this.world.boxesNear) this.collideBoxes();
     if (this.constraint) {
       const hit = this.constraint(this.pos, this.vel);
       if (hit > 0) {
@@ -310,6 +311,57 @@ export class Bike {
         if (this.wheelie.active) this.endWheelie();
         if (-vn > 1) this.onImpact?.('tree', -vn);
       }
+    }
+  }
+
+  // Buildings and other solid boxes (the city): a few circles along the
+  // vehicle are pushed out of any box they overlap, the speed into the wall
+  // is taken away, and the vehicle turns to scrape along it.
+  collideBoxes() {
+    const boxes = this.world.boxesNear(this.pos.x, this.pos.z, this.boxBuf || (this.boxBuf = []));
+    if (!boxes.length) return;
+    const r = this.spec.radius || 0.35;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    let worst = 0;
+    for (const off of this.spec.body || [0]) {
+      for (const b of boxes) {
+        const px = this.pos.x + fx * off, pz = this.pos.z + fz * off;
+        const qx = clamp(px, b[0], b[2]), qz = clamp(pz, b[1], b[3]);
+        const dx = px - qx, dz = pz - qz, d = Math.hypot(dx, dz);
+        if (d >= r) continue;
+        let nx, nz, push;
+        if (d > 1e-4) { nx = dx / d; nz = dz / d; push = r - d; }
+        else {
+          // the centre got inside: out through the nearest side
+          const sides = [[px - b[0], -1, 0], [b[2] - px, 1, 0], [pz - b[1], 0, -1], [b[3] - pz, 0, 1]];
+          sides.sort((a, c) => a[0] - c[0]);
+          [push, nx, nz] = sides[0];
+          push += r;
+        }
+        this.pos.x += nx * push;
+        this.pos.z += nz * push;
+        const vn = this.vel.x * nx + this.vel.z * nz;
+        if (vn < 0) {
+          this.vel.x -= nx * vn;
+          this.vel.z -= nz * vn;
+          // scraping costs speed, more for a harder hit
+          const keep = 1 - Math.min(0.35, -vn / 40);
+          this.vel.x *= keep; this.vel.z *= keep;
+          worst = Math.max(worst, -vn);
+        }
+      }
+    }
+    if (worst > 0) {
+      // turn to run along the wall instead of into it
+      const vf = this.vel.x * fx + this.vel.z * fz;
+      if (vf > 3) {
+        const along = Math.atan2(this.vel.x, this.vel.z);
+        let d = along - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        this.yaw += d * 0.3;
+        this.yawRate *= 0.6;
+      }
+      if (this.wheelie.active && worst > 3) this.endWheelie();
+      if (worst > 1.5) this.onImpact?.('wall', worst);
     }
   }
 
