@@ -22,11 +22,11 @@ export const VEHICLES = {
   },
 };
 
-// The bike's look in the neon city (same handling). Model: "Cyberpunk bike"
+// The bike's look in Hikari, the city (same handling). Model: "Cyberpunk bike"
 // by daCruz, CC BY-NC 4.0 (see cityBike.js).
 export const CITY_BIKE = {
-  label: 'Street bike (city look)',
-  blurb: 'Your bike, dressed for the neon city. Same handling, wheelies on Shift.',
+  label: 'Street bike (Hikari look)',
+  blurb: 'Your bike, dressed for Hikari. Same handling, wheelies on Shift.',
   stats: VEHICLES.bike.stats,
   spec: CITY_BIKE_SPEC, build: buildCityBike,
   eye: CITY_EYE, nose: new THREE.Vector3(0, 0.66, 1.5), lamp: new THREE.Vector3(0, 0.9, 1.4),

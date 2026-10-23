@@ -96,7 +96,7 @@ export class UI {
       .sort((a, b) => b.wins - a.wins)
       .map((p) => `<li class="${p.id === selfId ? 'me' : ''}"><span class="dot" style="background:${p.color}"></span>
         <span class="nm">${esc(p.name)}${p.id === hostId ? ' 👑' : ''}${p.id === selfId ? ' (you)' : ''}</span>
-        <span class="where" title="${p.map === 'city' ? 'In the neon city' : 'On the island'}">${p.map === 'city' ? '🌃' : '🏝'}</span>
+        <span class="where" title="${p.map === 'city' ? 'In Hikari' : 'On the island'}">${p.map === 'city' ? '🌃' : '🏝'}</span>
         <span class="wins" title="Race wins">${p.wins}🏆</span></li>`)
       .join('');
     $('#roster').innerHTML = `<li class="head"><span class="nm">Riders ${list.length}/6</span><span>wins</span></li>` + rows;

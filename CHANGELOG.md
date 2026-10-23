@@ -2,7 +2,31 @@
 
 Everything built so far, newest first. Live at **https://cruiseway.vercel.app**.
 
-0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6 on 23 October 2026.
+0.1–0.7 were built on 21 October 2026, 0.8–1.5 on 22 October 2026, and 1.6–1.7 on 23 October 2026.
+
+## 1.7 · Hikari: a city you can find your way round · 23 Oct 2026
+
+- **The city has a name: Hikari (光, "light").** It shows on the portals, the map, the messages ("Ravi warped into Hikari") and the vehicle menu.
+- **New portals.** The portal is now the project owner's video of a crackling cyan ring around a swirling vortex, played on a loop (trimmed from 6.9 MB to 0.75 MB). It's huge: about 28 m across on the island and 32 m in the city. Its brightness sets how see-through it is, so it looks right against a daytime sky too. The video only plays while a portal is within about 900 m. Until it starts (or on a phone that won't autoplay it), a drawn swirl stands in.
+- **Portals at the ends of the island.** Two gates, at the far east and far west ends, on the farthest straight stretch of road each way, instead of one near the start. Coming back from the city, you arrive at the gate you left by.
+- **A new city, designed map first.** The layout follows the map, so it's easy to navigate:
+  - **The core:** a regular grid of 10 × 10 blocks inside a ring road lit purple along its kerbs.
+  - **The Loop:** a boulevard round downtown, lit cyan along both edges. Follow the colour and you know where you are.
+  - **The crossing:** two central avenues meet at the scramble crossing in the middle.
+  - **The Harbor** (west wing): warehouses with lit loading doors and about 600 stacked shipping containers. The portal home stands at the end of the main avenue.
+  - **The Circuit District** (east wing): a tech campus with ribbon windows and lines of cyan light.
+  - **The bay** lies north and south, behind the seawall.
+- **New map.** A night-time city guide:
+  - dark water with depth contours;
+  - streets lighter than the blocks;
+  - the Loop and ring road glowing in their colours;
+  - buildings tinted by district;
+  - districts named, and the portals drawn as glowing rings.
+- **Races and Manhunt in Hikari.**
+  - **Races:** Loop Grand Prix (Expert), Ring Road Run (Hard), Downtown Zigzag (Extreme, 18 right-angle turns) and Circuit–Harbor Dash (Hard).
+  - **Manhunt arenas:** Scramble Square and Circuit Yard.
+  - They work like the island's: beacons, lobbies, gates, race walls and best times. Whoever is in the other world just sees a message.
+- **Clearer roads.** The street reflections are much fainter (at most 28% instead of 60%), the tarmac is a little lighter, and the markings are brighter.
 
 ## 1.6 · The neon city · 23 Oct 2026
 

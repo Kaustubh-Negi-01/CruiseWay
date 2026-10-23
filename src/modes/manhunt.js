@@ -62,7 +62,7 @@ export class Manhunt {
     hr.itMs = new Map();
     hr.tags = new Map();
     hr.last = new Map();     // previous snapshot per player, for swept tag checks
-    const spot = g.island.spots[hr.spot], c = spot.route.at(spot.startS);
+    const spot = g.spotById(hr.spot), c = spot.route.at(spot.startS);
     hr.center = { x: c.x, z: c.z };
     hr.durationS = hr.minutes * 60;
     g.sendAll({ t: 'lobby', lobby: null });
@@ -75,7 +75,7 @@ export class Manhunt {
 
   // The IT starts in the middle; runners on roads in a ring 170-260 m out.
   spawns(hr) {
-    const net = this.g.island.net, out = {};
+    const net = this.g.netOfSpot(hr.spot), out = {};
     const place = (x, z) => {
       const n = net.nearest(x, z, 200);
       return n ? [n.x, n.z, Math.atan2(n.tx, n.tz)] : [x, z, 0];
@@ -222,7 +222,7 @@ export class Manhunt {
       buzz(30);
       g.sound?.checkpoint();
     } else if (msg.t === 'hunt_shock') {
-      if (g.map === 'island') this.ring(msg.x, msg.z);
+      if (g.map === g.mapOfSpot(r.spot.id)) this.ring(msg.x, msg.z);
       if (r.participant && r.it !== me && Math.hypot(g.car.pos.x - msg.x, g.car.pos.z - msg.z) < POWERS.shock.radius) {
         this.slowUntil = now + POWERS.shock.secs * 1000;
         g.ui.flash('💥 Shockwave! Slowed down');
@@ -236,8 +236,8 @@ export class Manhunt {
     const g = this.g;
     g.ui.closeSpotPrompt();
     this.cleanup();
-    const spot = g.island.spots[h.spot];
-    const participant = h.participants.includes(g.selfId) && g.map === 'island';
+    const spot = g.spotById(h.spot);
+    const participant = h.participants.includes(g.selfId) && g.map === g.mapOfSpot(h.spot);
     this.r = g.race = {
       mode: 'hunt', id: h.id, spot, participant, phase: participant ? 'spawn' : 'spectate',
       it: h.it, center: h.center, durationS: h.durationS, startTime: 0, participants: h.participants,
@@ -252,7 +252,7 @@ export class Manhunt {
     this.rings = [];
     if (participant) {
       g.nav = null;
-      this.wall = new ArenaWall(g.scene, h.center, g.island);
+      this.wall = new ArenaWall(g.scene, h.center, g.world);
       g.car.constraint = (pos, vel) => this.wall.constrain(pos, vel, this.radius());
       const [x, z, yaw] = h.spawns[g.selfId];
       g.placeAt({ x, z }, yaw);
@@ -377,7 +377,7 @@ export class Manhunt {
       new THREE.RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
     );
-    ring.position.set(x, g.island.heightAt(x, z) + 0.6, z);
+    ring.position.set(x, g.world.heightAt(x, z) + 0.6, z);
     ring.userData.t = 0;
     g.scene.add(ring);
     this.rings.push(ring);
