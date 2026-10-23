@@ -22,7 +22,7 @@ export class Input {
       if (e.code === 'F3') { e.preventDefault(); if (!e.repeat) this.fire('stats', true); return; }
       if (e.code === 'Tab') e.preventDefault();
       if (!e.repeat) {
-        const action = { KeyR: 'reset', KeyC: 'camera', KeyM: 'map', KeyQ: 'radio', KeyV: 'vehicle', KeyE: 'power', Tab: 'players', Escape: 'escape' }[e.code];
+        const action = { KeyR: 'reset', KeyC: 'camera', KeyM: 'map', KeyQ: 'radio', KeyV: 'vehicle', KeyE: 'power', KeyF: 'rewind', Tab: 'players', Escape: 'escape' }[e.code];
         if (action) this.fire(action, true);
       }
       this.keys.add(e.code);
@@ -39,13 +39,14 @@ export class Input {
 
   read() {
     const k = this.keys;
-    let steer = 0, throttle = 0, brake = 0, handbrake = false, wheelie = false;
+    let steer = 0, throttle = 0, brake = 0, handbrake = false, wheelie = false, roll = 0;
     if (this.enabled) {
       if (k.has('KeyA') || k.has('ArrowLeft')) steer += 1;
       if (k.has('KeyD') || k.has('ArrowRight')) steer -= 1;
       if (k.has('KeyW') || k.has('ArrowUp')) throttle = 1;
       if (k.has('KeyS') || k.has('ArrowDown')) brake = 1;
       handbrake = k.has('Space');
+      roll = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);   // barrel rolls (mega-event, in the air)
       wheelie = k.has('ShiftLeft') || k.has('ShiftRight');
 
       steer += this.touch.steer;
@@ -61,6 +62,7 @@ export class Input {
         throttle = Math.max(throttle, pad.buttons[7]?.value || 0);
         brake = Math.max(brake, pad.buttons[6]?.value || 0);
         handbrake = handbrake || !!pad.buttons[0]?.pressed;
+        roll += (pad.buttons[5]?.pressed ? 1 : 0) - (pad.buttons[4]?.pressed ? 1 : 0);
         wheelie = wheelie || !!pad.buttons[2]?.pressed;
         const edge = (i, action) => {
           const p = !!pad.buttons[i]?.pressed;
@@ -72,7 +74,7 @@ export class Input {
         edge(8, 'map');
       }
     }
-    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, wheelie };
+    return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, wheelie, roll: Math.max(-1, Math.min(1, roll)) };
   }
 
   // On-screen controls for phones / tablets.

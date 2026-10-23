@@ -112,7 +112,7 @@ export class RaceBarriers {
             if (Math.hypot(r.x[j] - wx, r.z[j] - wz) < r.half[j] + 1.5) { blocked = true; break; }
           }
         }
-        this.wall[side][i] = blocked ? 0 : 1;
+        this.wall[side][i] = blocked || r.air?.[i] ? 0 : 1;   // (no walls in the sky)
       }
     }
   }
@@ -158,6 +158,7 @@ export class RaceBarriers {
     const q = r.nearestS(pos.x, pos.z, hint, 60);
     this.lastS = q.s;
     const i = Math.min(r.n - 1, Math.max(0, r.indexAt(q.s)));
+    if (r.air?.[i]) return 0;
     const p = r.at(q.s);
     // well above or below the route (fallen off the Skyway): the walls aren't where you are
     if (Math.abs(pos.y - p.y) > 6) return 0;

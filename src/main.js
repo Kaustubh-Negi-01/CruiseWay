@@ -257,7 +257,7 @@ const radio = new Radio({
 const radioPanel = new RadioPanel(radio);
 radio.setMaster(sound.settings.master);
 radio.on(() => sound.setDuck(radio.playing));
-input.on('radio', () => { if (game.running && !IS_MOBILE) radioPanel.toggle(); });
+input.on('radio', () => { if (game.running && !IS_MOBILE && !game.event) radioPanel.toggle(); });   // (Q rolls during the mega-event)
 input.on('power', (d) => { if (d && game.running) game.hunt.usePower(); });
 
 // ---------------------------------------------------------------- vehicle (V)

@@ -6,7 +6,10 @@ const G = 16;
 const FIXED = 1 / 120;
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
 const _lean = new THREE.Quaternion(), _axis = new THREE.Vector3(), _p = new THREE.Vector3();
-const _e = new THREE.Euler(), _q2 = new THREE.Quaternion();
+const _e = new THREE.Euler(), _q2 = new THREE.Quaternion(), _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3();
+const NO_INPUT = { steer: 0, throttle: 0, brake: 0, handbrake: false, wheelie: false, roll: 0 };
+const LAND_SPEED = 46;   // m/s: the most you keep from a sky jump when you touch down (before any Overdrive)
+const PIVOT = 0.7;       // stunts turn the ride about a point this far above the wheels
 
 // Wheelies: hold the wheelie key above minSpeed. The meter drains while the
 // front is up and recharges after a short rest. Steering is much weaker and
@@ -108,6 +111,8 @@ export class Bike {
     this.prevYaw = this.renderYaw = yaw;
     this.acc = 0;
     this.airPitch = this.airRoll = this.trajPitch = this.squash = 0;
+    this.flight = null;
+    this.stunt?.reset();
   }
 
   // Height of the ground under (x, z) for something at height y: on the
@@ -183,9 +188,13 @@ export class Bike {
     }
   }
 
-  step(dt, input) {
+  step(dt, keys) {
     const s = this.spec;
     if (this.frozen) { this.vel.set(0, 0, 0); this.yawRate = 0; return; }
+    // a sky jump: a fixed arc to its landing, only the stunts are yours
+    if (this.flight) { this.flyStep(dt, keys); return; }
+    // stunts on (the mega-event) and in the air: the keys turn the ride, not drive it
+    const input = this.stunt && !this.onGround ? NO_INPUT : keys;
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     let vf = this.vel.x * fx + this.vel.z * fz;
     let vl = this.vel.x * fz - this.vel.z * fx;
@@ -280,6 +289,13 @@ export class Bike {
     this.pos.z += this.vel.z * dt;
     this.collideTrees();
     if (this.world.boxesNear) this.collideBoxes();
+    // the mega-event's ramp rails
+    const rail = this.event?.keepOn(this.pos, this.vel);
+    if (rail) {
+      let d = Math.atan2(rail.dir[0], rail.dir[1]) - this.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.yaw += d * Math.min(1, dt * 6);
+    }
     if (this.constraint) {
       const hit = this.constraint(this.pos, this.vel);
       if (hit > 0) {
@@ -295,6 +311,15 @@ export class Bike {
       if (hit > 0.5) this.onImpact?.('wall', hit);
     }
 
+    // the mega-event: booster pads, and riding off a launch ramp
+    if (this.event) {
+      const pad = this.event.padAt(this.pos);
+      if (pad && pad !== this.lastPad) this.event.onPad?.(pad);
+      this.lastPad = pad;
+      const ramp = this.onGround && this.event.launchFrom(this.pos, this.vel);
+      if (ramp) { this.startFlight(ramp, keys); return; }
+    }
+
     const h = this.ground(this.pos.x, this.pos.z, this.pos.y);
     const wasOnGround = this.onGround;
     this.vel.y -= G * dt;
@@ -305,6 +330,7 @@ export class Bike {
     if (this.pos.y <= h || stick) {
       // touching down after some air
       if (this.airTime > 0.25) this.land(h);
+      else if (this.stunt?.active) this.stunt.reset();   // just a bump
       this.airTime = 0;
       this.pos.y = h;
       this.onGround = true;
@@ -314,6 +340,11 @@ export class Bike {
       // the bike up at 9 m/s)
       const n = this.normal;
       this.vel.y = clamp(-(n.x * this.vel.x + n.z * this.vel.z) / Math.max(0.3, n.y), -30, 9);
+    } else if (this.stunt) {
+      if (wasOnGround) this.stunt.takeoff(keys);
+      this.onGround = false;
+      this.airTime += dt;
+      this.airStunts(dt, keys, h);
     } else {
       // In the air: the nose follows the arc a little on its own, and you
       // line up the landing yourself, W/S pitching the nose down/up and A/D
@@ -343,6 +374,18 @@ export class Bike {
   // really heavy drop. The suspension squats to soak it up.
   land(h) {
     const impact = Math.max(0, -this.vel.y);
+    if (this.stunt) {
+      // the event: how you land is down to the stunt (upright, sketchy or a bail)
+      const res = this.stunt.land();
+      const keep = res.result === 'bail' ? 0.45 : res.result === 'sketchy' ? 0.85 : 1;
+      this.vel.x *= keep; this.vel.z *= keep;
+      this.trajPitch = 0;
+      this.squash = Math.min(0.32, impact * 0.013);
+      this.bodyVy = Math.min(this.bodyVy, -Math.min(impact, 30) * 0.3);
+      this.onImpact?.('land', Math.min(20, impact));
+      if (res.result !== 'none') this.event?.onLand?.(res);
+      return;
+    }
     this.world.normalAt(this.pos.x, this.pos.z, this.normal, h + 0.2);
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), n = this.normal;
     const groundPitch = Math.atan2(-(n.x * fx + n.z * fz), n.y);   // + = facing uphill
@@ -358,6 +401,57 @@ export class Bike {
     this.lastLanding = { impact, off, loss };
   }
 
+  // Ride off a launch ramp's lip: the flight is a fixed arc to its landing.
+  startFlight(ramp, keys) {
+    this.flight = { path: ramp.flight, t: 0, ramp };
+    ramp.flight.at(0, this.pos, this.vel);
+    this.yaw = Math.atan2(this.vel.x, this.vel.z);
+    this.yawRate = 0;
+    this.onGround = false;
+    this.airTime = 0;
+    this.normal.set(0, 1, 0);
+    if (this.wheelie.active) this.endWheelie();
+    this.stunt?.takeoff(keys);
+    this.event?.onLaunch?.(ramp);
+  }
+
+  flyStep(dt, keys) {
+    const f = this.flight;
+    f.t += dt;
+    const t = f.t;
+    f.path.at(t, this.pos, this.vel);
+    this.yaw = Math.atan2(this.vel.x, this.vel.z);   // the ride turns with the curve
+    this.airTime += dt;
+    const h = this.ground(this.pos.x, this.pos.z, this.pos.y);
+    if (t > 0.5 && (this.pos.y <= h || t > f.path.T + 1.5)) {
+      // touch down heading the way we flew, at a speed the road can take
+      this.flight = null;
+      this.pos.y = h;
+      const sp = Math.min(Math.hypot(this.vel.x, this.vel.z), LAND_SPEED);
+      this.vel.x = Math.sin(this.yaw) * sp;
+      this.vel.z = Math.cos(this.yaw) * sp;
+      this.land(h);
+      this.airTime = 0;
+      this.onGround = true;
+      this.world.normalAt(this.pos.x, this.pos.z, this.normal, h + 0.2);
+      this.vel.y = 0;
+      this.lastGround = h;
+      return;
+    }
+    this.airStunts(dt, keys, h);
+    this.lastGround = h;
+  }
+
+  // stunts for one tick in the air; the nose follows the arc a little,
+  // less and less as the ground comes up
+  airStunts(dt, keys, h) {
+    const toGround = this.vel.y < -0.5 ? (this.pos.y - h) / -this.vel.y : 9;
+    this.stunt?.air(dt, keys, toGround);
+    const hs = Math.hypot(this.vel.x, this.vel.z);
+    this.trajPitch = 0.5 * Math.atan2(this.vel.y, Math.max(4, hs)) * Math.min(1, toGround / 0.9);
+    this.normal.set(0, 1, 0);
+  }
+
   endWheelie() {
     this.wheelie.active = false;
     this.wheelie.rest = WHEELIE.rest;
@@ -365,6 +459,8 @@ export class Bike {
 
   // Glance off tree trunks: push out, kill the velocity into the trunk, scrub speed.
   collideTrees() {
+    // (up on a ramp or a deck, the trees are below you)
+    if (this.world.groundAt && this.pos.y - this.world.heightAt(this.pos.x, this.pos.z) > 2.5) return;
     const trunks = this.world.gen.trunksNear(this.pos.x, this.pos.z, this.trunkBuf || (this.trunkBuf = []));
     for (const t of trunks) {
       const dx = this.pos.x - t.x, dz = this.pos.z - t.z;
@@ -447,12 +543,20 @@ export class Bike {
     out.setFromRotationMatrix(_m);
     const pitch = (this.airPitch || 0) + (this.trajPitch || 0), roll = this.airRoll || 0;
     if (pitch || roll) out.multiply(_q2.setFromEuler(_e.set(-pitch, 0, roll)));
+    if (this.stunt?.active) out.multiply(this.stunt.q);
     return out;
   }
 
   applyTo(model) {
     model.position.set(this.renderPos.x, this.bodyY + this.rideLift + this.groundFit, this.renderPos.z);
     this.orientation(model.quaternion);
+    if (this.stunt?.active) {
+      // flips and rolls turn about the middle of the ride, not its wheels
+      const full = model.quaternion, base = _q2.copy(full).multiply(_q.copy(this.stunt.q).invert());
+      _c1.set(0, PIVOT, 0).applyQuaternion(base);
+      _c2.set(0, PIVOT, 0).applyQuaternion(full);
+      model.position.add(_c1).sub(_c2);
+    }
     const ud = model.userData;
     poseLean(ud.lean, this.lean, this.wheelie.angle, this.spec.rearZ);
     const sa = this.steer * (ud.steerers ? 0.45 : 0.25) * Math.max(0.2, 1 - this.speed / 30);

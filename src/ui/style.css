@@ -69,6 +69,24 @@ input:focus { border-color: var(--accent); }
 #roster { list-style: none; margin: 0; padding: 6px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 200px; backdrop-filter: blur(8px); display: none; }
 /* hidden while riding: Tab shows it, and it shows for a few seconds after a race, then fades */
 #roster.show { display: block; }
+
+/* island mega-event: the stunt combo, landing banners, Overdrive, Zen bar */
+#stunts { position: absolute; top: 92px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; color: #fff;
+  text-shadow: 0 2px 12px rgba(0,0,0,.75), 0 0 2px #000; min-width: 260px; }
+#stunts .st-tricks { font: 800 15px system-ui, sans-serif; letter-spacing: .08em; color: #ffe2a8; }
+#stunts .st-pts { font: 900 40px ui-monospace, monospace; font-variant-numeric: tabular-nums; line-height: 1.05; }
+#stunts .st-pts small { font-size: 20px; color: #ffb22e; }
+#stunts .st-grab { font: 900 18px system-ui, sans-serif; color: #3cf; letter-spacing: .2em; animation: stGrab .35s ease-in-out infinite alternate; }
+#stunts .st-result { font: 900 26px system-ui, sans-serif; letter-spacing: .12em; }
+#stunts .st-result.clean { color: #6cff8a; } #stunts .st-result.sketchy { color: #ffd23f; } #stunts .st-result.bail { color: #ff4f5e; }
+#stunts .st-od { font: 900 22px system-ui, sans-serif; letter-spacing: .3em; color: #ffb22e; animation: stGrab .25s ease-in-out infinite alternate; }
+#stunts .st-odbar { margin: 6px auto 0; width: 180px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
+#stunts .st-odbar i { display: block; height: 100%; background: linear-gradient(90deg, #ff7a18, #ffd23f); }
+@keyframes stGrab { from { opacity: .65; transform: scale(.97); } to { opacity: 1; transform: scale(1.04); } }
+#zenBar { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px 6px 14px; font-size: 13px; color: var(--muted); backdrop-filter: blur(8px); }
+#zenBar b { color: #ffd88a; }
+#spMeta .chip.mega { background: #ffb22e; color: #1a1205; }
 #roster.fading { opacity: 0; transition: opacity var(--board-fade, 3s) cubic-bezier(.45, 0, .55, 1); }
 #roster li { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font-size: 14px; }
 #roster .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }

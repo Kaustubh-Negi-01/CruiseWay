@@ -55,6 +55,16 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
   - You only see riders in the same world as you, and both worlds are told when someone crosses. The rider list shows 🏝 or 🌃 by each name. The portal stays shut during races and Manhunt.
 - **Theme song.** CruiseWay's theme, "Apex Pursuit", plays on the menus while you type your name and create or join a world. Pressing *Create & drive* or *Join* fades it out in under a second, so the world appears in silence. (Browsers only allow sound after your first tap or key press, so it may start then.) A menu left open in a background tab stays quiet.
 - **Drive line.** Chevrons on the road along your race or GPS route, coloured blue (keep going), yellow (ease off) or red (brake), from each bend's speed limit and your speed. On by default; Esc → General turns it off.
+- **Island Odyssey, the island mega-event.** One extra flag (gold) on every island, next to the race spots:
+  - **The circuit:** every paved road and dirt trail on the island in one ride (roughly 60–75 km of road), never riding the same road twice, and back to the flag at the end.
+  - **Sky jumps:** where the roads don't join up, a giant launch ramp at the crossing throws you through the sky to the next road to ride, over lakes, forests and roads you've already done. There are 13–15 per island, up to about 300 m high and 12 s in the air. Each flight is a fixed arc that always lands on the road; you only do the stunts.
+  - **Boosters:** glowing pads on the road and on each ramp's run-up get you up to speed.
+  - **Two modes, chosen at the flag:**
+    - **Zen Parkour** (just you, any time): no timer, no walls, nothing to lose, and the sky held at golden hour. <kbd>F</kbd> takes you back to the run-up of the last ramp you jumped, to practise it again.
+    - **Parkour Race** (with whoever joins the lobby): gates and walls like any race, scored on time minus stunt points (1,000 points take a second off).
+  - **Stunts in the air:** <kbd>W</kbd>/<kbd>S</kbd> frontflips and backflips, <kbd>A</kbd>/<kbd>D</kbd> flat 360s, <kbd>Q</kbd>/<kbd>E</kbd> barrel rolls (with W/S: corkscrews), each with its own momentum. Hold <kbd>Space</kbd> to grab: points build faster, but let go before you land or you bail. Keys already held at takeoff don't count until you let go.
+  - **Combos and Overdrive:** a combo counter shows your tricks, points and multiplier. Near the ground, with no stunt keys held, an assist rights you. Land upright and the combo turns into an Overdrive boost; land sketchy and you keep half and get no boost; land on your roof (or still grabbing) and you bail.
+  - **Resets keep you moving:** <kbd>R</kbd> puts you back at the last checkpoint already doing 80 km/h. Landing in deep water does the same straight away.
 - **Finish cinematic.** Crossing a race finish cuts to a short in-game cinematic of your ride: camera cuts, then fireworks. Skip, Space, Enter or Esc ends it, and then the results appear.
 - **Manhunt (3+ riders).** Tag, with vehicles, at the purple arena spots (the island's 1-2 star spots, and Scramble Square in Hikari).
   - **Lobby:** ride up and join. The host picks the round length (3, 5 or 8 min). It starts once at least 3 riders are in.
@@ -108,10 +118,11 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 | R | Reset to road (in a race: last checkpoint; in Hikari, a short run-up before where you got to) |
 | C | Cycle camera |
 | V | Choose your vehicle: superbike or hypercar |
-| E | Manhunt: use the IT's power-up |
+| E | Manhunt: use the IT's power-up. Mega-event, in the air: barrel roll right |
 | M | Map |
 | Tab | Show / hide the leaderboard |
-| Q | Radio |
+| Q | Radio. Mega-event, in the air: barrel roll left (the radio stays shut during the event) |
+| F | Mega-event, Zen Parkour: back to the run-up of the last ramp you jumped |
 | Enter / Backspace | Accept / dismiss a race prompt |
 | Alt + C | Show / hide the mouse cursor (hidden while riding) |
 | F3 | Performance overlay (FPS, CPU time, draw calls, triangles) |
@@ -207,7 +218,9 @@ src/
 
   vehicle/
     bike.js                the bike model, its tuning, cockpit speedometer
-    physics.js             riding physics: grip, lean, suspension, collisions, air control, landings
+    physics.js             riding physics: grip, lean, suspension, collisions, air control, landings,
+                           sky-jump flights
+    stunts.js              mega-event stunts: flips, 360s, rolls, grabs, combos, landing grades
     car.js                 the hypercar model and its tuning
     cityBike.js            the bike's city look (loads public/models/cyberbike.glb)
     vehicles.js            the list of rides for the V menu
@@ -220,6 +233,8 @@ src/
     markers.js             start / checkpoint / finish gates and beacon
     driveLine.js           the drive line: chevrons along a race or GPS route
     finishCine.js          the race-finish cinematic: camera shots and fireworks
+    megaEvent.js           the island mega-event: Zen Parkour, Parkour Race, Overdrive, resets
+    megaProps.js           its launch ramps and booster pads (meshes, and solid ground for the physics)
     barriers.js            holographic race walls + keeping racers inside them
 
   radio/
@@ -260,6 +275,7 @@ src/
       network.js           road network + GPS routing
       spots.js             race spots, routes, difficulty, names
       terrain.worker.js    builds terrain off the main thread
+      megaCircuit.js       the mega-event circuit: every road once, sky jumps, ramps, flights
     rendering/             three.js side of the world
       world.js             chunk streaming, roads, trees, water, beacons
       materials.js         shaders: ground, roads, grass, haze

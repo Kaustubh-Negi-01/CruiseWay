@@ -212,12 +212,17 @@ export class UI {
       return;
     }
     bar.classList.remove('hunt-it');
-    if (r && r.participant) {
+    if (r && r.participant && r.zen) {
+      bar.classList.remove('hidden');
+      const total = r.spot.checkpoints.length;
+      const next = r.next < total ? `Checkpoint ${r.next + 1}/${total}` : 'Home';
+      bar.innerHTML = `<span>☯ <strong>Zen</strong></span><span>Next <strong>${next}</strong></span><span>⭐ <strong>${(r.stuntPoints || 0).toLocaleString()}</strong></span>`;
+    } else if (r && r.participant) {
       bar.classList.remove('hidden');
       const total = r.spot.checkpoints.length;
       const t = r.finished ? r.finishTime : r.phase === 'running' ? r.elapsed || 0 : 0;
       const next = r.finished ? 'Finished!' : r.next < total ? `Checkpoint ${r.next + 1}/${total}` : 'Finish';
-      bar.innerHTML = `<b>${fmtTime(t)}</b><span>Next <strong>${next}</strong></span>` +
+      bar.innerHTML = `<b>${fmtTime(t)}</b><span>Next <strong>${next}</strong></span>` + (r.spot.mega ? `<span>⭐ <strong>${(r.stuntPoints || 0).toLocaleString()}</strong></span>` : '') +
         (r.finished || r.distToNext == null ? '' : `<span><strong>${Math.round(r.distToNext)} m</strong></span>`);
     } else if (r) {
       bar.classList.remove('hidden');
@@ -248,13 +253,26 @@ export class UI {
     busyEl.textContent = busy || '';
     $('#spYes').classList.toggle('hidden', !!busy);
     $('#spNo').textContent = busy ? 'OK' : 'Not now';
+    const alt = $('#spAlt');
+    alt.classList.toggle('hidden', !spot.mega);
+    if (spot.mega) {
+      // the island mega-event: Zen Parkour on your own (any time), or a race
+      $('#spKicker').textContent = 'ISLAND MEGA-EVENT';
+      $('#spMeta').innerHTML = `<span class="chip mega">every road · ${Math.round(spot.length / 1000)} km</span>`
+        + `<span class="chip">${spot.circuit.ramps.length} sky jumps</span><span class="chip">stunts → Overdrive</span>`;
+      alt.textContent = 'Zen Parkour';
+      $('#spYes').textContent = 'Parkour Race';
+      if (busy) $('#spNo').textContent = 'Not now';
+    }
     el.classList.remove('hidden');
     const done = (yes) => { el.classList.add('hidden'); cb(yes); };
     $('#spYes').onclick = () => done(true);
     $('#spNo').onclick = () => done(false);
+    alt.onclick = () => done('zen');
     this.promptKeys = (e) => {
       if (el.classList.contains('hidden')) return;
       if (e.code === 'Enter' && !busy) done(true);
+      if (e.code === 'KeyZ' && spot.mega) done('zen');
       if (e.code === 'Backspace') done(false);
     };
     removeEventListener('keydown', this.promptKeysBound);
@@ -297,6 +315,26 @@ export class UI {
       return;
     }
     const d = DIFFICULTY[spot.difficulty];
+    if (spot.mega) {
+      const c = spot.circuit;
+      el.innerHTML = `
+        <div class="sp-kicker" style="color:#ffb22e">ISLAND MEGA-EVENT</div>
+        <h3>${esc(spot.name)}</h3>
+        <p class="hint">Every paved road and dirt trail on the island in one ride, never the same road twice. Giant ramps launch you across the island where the roads don't join up. In the air: W/S flips, A/D 360s, Q/E barrel rolls, hold Space to grab. Land clean for an Overdrive boost.</p>
+        <dl>
+          <dt>Distance</dt><dd>${km(spot.length)} (roads ${c.stats.roadKm.toFixed(0)} km)</dd>
+          <dt>Sky jumps</dt><dd>${c.ramps.length}</dd>
+          <dt>Boosters</dt><dd>${c.pads.length}</dd>
+          <dt>Checkpoints</dt><dd>${spot.checkpoints.length}</dd>
+          <dt>Zen Parkour</dt><dd>no timer, golden hour, F rewinds</dd>
+          <dt>Parkour Race</dt><dd>time − stunt points</dd>
+        </dl>
+        <div class="row"><button class="btn small" id="cardClose">Close</button><button class="btn small primary" id="cardRoute">Set route</button></div>`;
+      el.classList.remove('hidden');
+      $('#cardClose').onclick = () => this.showSpotCard(null);
+      $('#cardRoute').onclick = () => onRoute(spot);
+      return;
+    }
     if (spot.shuffle) {
       el.innerHTML = `
         <div class="sp-kicker">RACE SPOT</div>
@@ -444,8 +482,35 @@ export class UI {
     $('#resultsSub').textContent = `${spot.name} · ${km(spot.length)} · ${DIFFICULTY[spot.difficulty].label}`;
     $('#resultsList').innerHTML = list.map((s, i) => `<li><span class="pos">${i + 1}</span>
       <span class="dot" style="background:${s.color}"></span><span>${esc(s.name)}${s.me ? ' (you)' : ''}</span>
-      <span class="t">${s.time != null ? fmtTime(s.time) : 'DNF'}</span></li>`).join('');
+      <span class="t">${s.time != null ? fmtTime(s.time) : 'DNF'}${s.pts != null && s.raw != null ? `<small> = ${fmtTime(s.raw)} − ${s.pts.toLocaleString()} pts</small>` : ''}</span></li>`).join('');
     $('#results').classList.remove('hidden');
     $('#resultsOk').onclick = () => $('#results').classList.add('hidden');
+  }
+
+  // The stunt combo while you're in the air (tricks, points × multiplier,
+  // GRAB), how you landed, and the Overdrive left. null hides it.
+  stunts(s) {
+    const el = $('#stunts');
+    let html = '';
+    if (s?.air) {
+      const a = s.air;
+      html = `<div class="st-tricks">${a.tricks.length ? a.tricks.map((t) => esc(t.n > 1 ? t.name + ' ×' + t.n : t.name)).join(' + ') : 'AIRBORNE'}</div>`
+        + `<div class="st-pts">${a.points.toLocaleString()}<small> ×${a.mult.toFixed(1)}</small></div>` + (a.grab ? '<div class="st-grab">GRAB!</div>' : '');
+    } else if (s?.banner) {
+      const b = s.banner, label = { clean: 'CLEAN LANDING', sketchy: 'SKETCHY LANDING', bail: 'BAILED' }[b.result];
+      html = `<div class="st-result ${b.result}">${label}</div>`
+        + (b.points ? `<div class="st-pts">+${b.points.toLocaleString()}</div>` : '')
+        + (b.overdrive ? '<div class="st-od">OVERDRIVE</div>' : '')
+        + (b.tricks.length ? `<div class="st-tricks">${b.tricks.map(esc).join(' + ')}</div>` : '');
+    }
+    if (s?.overdrive > 0) html += `<div class="st-odbar"><i style="width:${Math.min(100, (s.overdrive / 6) * 100).toFixed(0)}%"></i></div>`;
+    if (html !== this.stuntHtml) { el.innerHTML = html; this.stuntHtml = html; }
+    el.classList.toggle('hidden', !html);
+  }
+
+  // the Zen Parkour bar, with its Leave button
+  zen(on, onLeave) {
+    $('#zenBar').classList.toggle('hidden', !on);
+    $('#zenLeave').onclick = on ? onLeave : null;
   }
 }
