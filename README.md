@@ -41,9 +41,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
     - the bay north and south.
   - Shops at the edge, mid-rise blocks, and towers up to about 270 m inside the Loop, with lit windows, neon blade signs, shop signs, billboards and LED screens (all names invented).
   - Damp streets with faint reflections, and the city's own weather (drizzle, rain, fog, the odd thunderstorm).
-  - Races and Manhunt there too:
-    - **Races:** Loop Grand Prix, Ring Road Run, Downtown Zigzag and Circuit–Harbor Dash.
-    - **Manhunt arenas:** Scramble Square and Circuit Yard.
+  - **The Skyway:** a rooftop parkour line across the north row of blocks, about 0.7 km long and up to 23 m up. Glowing hard-light ramps climb from the street, bridges span the streets between roofs, pink launch lips throw you across gaps, and it ends with a 20 m drop back to the street.
+  - One race and one Manhunt arena, each with a single flag:
+    - **Hikari Grand Circuit** (about 3.9 km): the central avenue, round the Loop, out through the Harbor, over the whole Skyway, then the Circuit District and home along the ring road. Its gates, walls and drive line follow it up into the air. Fall off the Skyway and you're put back on it, a short run-up before where you fell.
+    - **Scramble Square** (Manhunt).
   - Buildings are solid, and the map, GPS and R reset all work there.
   - In the city your bike takes on a cyberpunk look (same handling), with a live speedo on its screen in first person.
   - You only see riders in the same world as you, and both worlds are told when someone crosses. The rider list shows 🏝 or 🌃 by each name. The portal stays shut during races and Manhunt.
@@ -92,10 +93,10 @@ Create a world, send the 5-letter code (or the invite link) to up to 5 friends, 
 
 | Key | Action |
 | --- | --- |
-| W A S D / arrows | Ride |
-| Space | Rear brake / slide |
+| W A S D / arrows | Ride. In the air: W / S pitch the nose down / up and A / D roll, to line up your landing (keys already held at takeoff don't count until you let go). |
+| Space | Rear brake / slide. In the car at speed, with steering: drift. |
 | Shift (hold, 40+ km/h) | Wheelie. Watch the bar under the speedometer; steering gets twitchy. |
-| R | Reset to road (in a race: last checkpoint) |
+| R | Reset to road (in a race: last checkpoint; in Hikari, a short run-up before where you got to) |
 | C | Cycle camera |
 | V | Choose your vehicle: superbike or hypercar |
 | E | Manhunt: use the IT's power-up |
@@ -195,7 +196,7 @@ src/
 
   vehicle/
     bike.js                the bike model, its tuning, cockpit speedometer
-    physics.js             riding physics: grip, lean, suspension, collisions
+    physics.js             riding physics: grip, lean, suspension, collisions, air control, landings
     car.js                 the hypercar model and its tuning
     cityBike.js            the bike's city look (loads public/models/cyberbike.glb)
     vehicles.js            the list of rides for the V menu
@@ -233,9 +234,11 @@ src/
     portal.js              the portals between the island and the city (video + stand-in)
     city/                  Hikari, the neon city
       cityGen.js           the layout: streets, the Loop, districts, buildings, signs,
-                           lights, containers, race and Manhunt spots (from the seed)
+                           lights, containers, the Skyway (roofs, decks, 3D ground),
+                           the race and Manhunt spots (from the seed)
       cityMap.js           the city's map picture
-      city.js              its meshes and shaders: buildings, wet streets, neon, glow
+      city.js              its meshes and shaders: buildings, wet streets, neon, glow,
+                           the Skyway's hard-light decks
       signs.js             the neon sign artwork (one atlas, drawn in code)
       citySky.js           the night sky, haze and the city's weather
     climate/
