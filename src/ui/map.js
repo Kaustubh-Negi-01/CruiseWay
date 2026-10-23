@@ -1,6 +1,7 @@
 import { MAP_EXTENT } from '../world/generation/terrainGen.js';
 import { KIND_DIRT } from '../world/generation/network.js';
 import { spotStyle } from '../world/generation/spots.js';
+import { CITY_NAME } from '../world/city/cityGen.js';
 
 // Island map: a satellite-style picture (terrain image from the worker with
 // the road network painted on top), plus live overlays — spots, riders,
@@ -256,7 +257,7 @@ export class MapView {
       o.race.checkpoints.forEach((cs, i) => { if (i >= (o.raceNext || 0)) this.dot(o.race.route.at(cs), '#ffcf3a', 4, '#111'); });
       this.flag(o.race.route.at(o.race.route.length - 1), '#ffffff', 'F');
     }
-    if (this.world.portal) this.gate(this.world.portal);
+    for (const p of this.world.portals || []) this.gate(p);
     if (o.waypoint) this.pin(o.waypoint);
     if (o.zone) {
       // the Manhunt zone
@@ -386,26 +387,31 @@ export class MapView {
     ctx.textAlign = 'start';
   }
 
-  // the portal to the other world
+  // a portal to the other world: a glowing cyan ring, like the real thing
   gate(p) {
     const ctx = this.ctx;
     const [x, y] = this.toScreen(p.x, p.z);
     const city = !!this.world.extent;
-    const col = city ? '#7dff9a' : '#ff2e88';
+    const col = '#22e5ff';
+    const rad = Math.max(9, Math.min(22, p.r * this.scale * 1.2));
     ctx.save();
-    ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.shadowColor = col; ctx.shadowBlur = 16;
     ctx.strokeStyle = col; ctx.lineWidth = 3.5;
-    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, rad * 0.62, 0, Math.PI * 2); ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = city ? 'rgba(125,255,154,0.35)' : 'rgba(255,46,136,0.35)';
-    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    grad.addColorStop(0, 'rgba(230,255,255,0.85)'); grad.addColorStop(1, 'rgba(34,229,255,0.15)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, rad * 0.9, 0, Math.PI * 2); ctx.fill();
     if (this.scale > 0.06) {
-      const label = city ? 'Portal to the island' : 'Portal to the neon city';
+      const label = city ? 'Portal to the island' : `Portal to ${CITY_NAME}`;
       ctx.font = '700 12px system-ui, sans-serif';
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-      ctx.strokeText(label, x + 14, y + 4);
+      ctx.strokeText(label, x + rad + 6, y + 4);
       ctx.fillStyle = '#fff';
-      ctx.fillText(label, x + 14, y + 4);
+      ctx.fillText(label, x + rad + 6, y + 4);
     }
     ctx.restore();
   }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BIKE, PALETTE, makeDash, glowTexture } from './bike.js';
 
-// The bike's look in the neon city: "Cyberpunk bike" by daCruz
+// The bike's look in Hikari, the city: "Cyberpunk bike" by daCruz
 // (https://skfb.ly/6RAYJ), licensed under CC BY-NC 4.0
 // (http://creativecommons.org/licenses/by-nc/4.0/).
 //

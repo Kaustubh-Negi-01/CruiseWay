@@ -388,7 +388,7 @@ function makeWater() {
 
 // ---- race spot beacons ------------------------------------------------------------
 
-function makeSpotBeacons(spots) {
+export function makeSpotBeacons(spots) {
   const group = new THREE.Group();
   for (const s of spots) {
     const p = s.route.at(s.startS);

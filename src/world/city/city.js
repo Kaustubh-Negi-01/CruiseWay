@@ -1,38 +1,44 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ATMOS, HAZE_PARS, HAZE_FRAG, patch, textures } from '../rendering/materials.js';
+import { makeSpotBeacons } from '../rendering/world.js';
 import { glowTexture } from '../../vehicle/bike.js';
-import { CityLayout, CITY, NEON } from './cityGen.js';
+import { CityLayout, CITY, NEON, K } from './cityGen.js';
 import { signAtlas, artRect, ART_COLOR } from './signs.js';
+import { paintCityMap } from './cityMap.js';
 
-// The neon city: always night, always a little wet.
+// Hikari, the neon city: always night, always a little wet.
 //
 // Built once from the layout in cityGen.js, in a handful of draw calls:
-//  - buildings: plain boxes in 16 tiles; a shader draws every window, shop
-//    front and tower crown (no textures), so a whole tile is one draw call;
-//  - streets: one big plane whose shader paints the markings, crossings and
-//    the scramble at the centre; it's slightly see-through, and under it
-//    a mirrored copy of the buildings and signs makes the wet reflections;
+//  - buildings: plain boxes in tiles; a shader draws every window, shop
+//    front, warehouse door and tower crown (no textures), so a whole tile is
+//    one draw call;
+//  - streets: one quad per street and per crossing, whose shader paints the
+//    markings from what each quad knows (its width, length and kind); the
+//    Loop's edges glow cyan and the ring road's purple. The tarmac is very
+//    slightly see-through, and under it a mirrored copy of the signs (and of
+//    the buildings, on the higher presets) makes faint wet reflections;
 //  - signs: one mesh using a single atlas (signs.js), with flicker and LED
 //    screens done in the shader; soft additive quads fake their glow and the
 //    coloured light they throw on the street (no real lights: they cost too
 //    much per pixel);
-//  - street lights and vending machines: instanced.
+//  - street lights, vending machines and harbour containers: instanced.
 //
 // It answers the same questions as the island's World (heightAt, net,
-// update...), so the game and the physics don't care which one they're in.
+// spots, update...), so the game and the physics don't care which one they're in.
 
-const TILE = 270;
+const TILE = 280;
 const _c = new THREE.Color();
 
 export class City {
-  constructor(scene, seed) {
+  constructor(scene, seed, layout = new CityLayout(seed)) {
     this.scene = scene;
     this.seed = seed;
-    const L = (this.layout = new CityLayout(seed));
+    const L = (this.layout = layout);
     this.net = L.net;
-    this.spots = [];
+    this.spots = L.spots;
     this.portal = L.portal;
+    this.portals = L.portals;
     this.extent = CITY.extent;
     this.gripScale = 1;
     this.gen = { trunksNear: (x, z, out) => L.trunksNear(x, z, out) };
@@ -59,9 +65,12 @@ export class City {
     yield* this.buildGlows();
     yield;
     this.buildVending();
+    this.buildContainers();
     this.buildBay();
+    this.beacons = makeSpotBeacons(this.spots);
+    this.scene.add(this.beacons);
     yield;
-    this.mapCanvas = paintMap(this.layout);
+    this.mapCanvas = paintCityMap(this.layout);
   }
 
   // ---- queries (same as the island's World) ----------------------------------------
@@ -94,7 +103,16 @@ export class City {
 
   // ---- per frame ---------------------------------------------------------------------
 
-  update() {}
+  // race spot beacons: hidden for the spot you're racing, faded as you arrive
+  update(focus, hideSpot = -1) {
+    if (!this.beacons) return;
+    for (const b of this.beacons.children) {
+      const d = Math.hypot(b.position.x - focus.x, b.position.z - focus.z);
+      b.visible = d < 2600 && b.userData.spot !== hideSpot;
+      if (b.userData.label) b.userData.label.visible = d < 350;
+      b.userData.beam.material.opacity = 0.28 * Math.min(1, Math.max(0, (d - 25) / 120));
+    }
+  }
 
   setDetail({ view, reflect = 2 }) {
     this.fogBase = 0.0055 / Math.max(3, view);
@@ -123,7 +141,7 @@ export class City {
     const tiles = new Map();
     for (const b of this.layout.buildings) {
       const cx = (b.box[0] + b.box[2]) / 2, cz = (b.box[1] + b.box[3]) / 2;
-      const k = Math.floor((cx + 600) / TILE) * 100 + Math.floor((cz + 600) / TILE);
+      const k = Math.floor((cx + 800) / TILE) * 100 + Math.floor((cz + 800) / TILE);
       if (!tiles.has(k)) tiles.set(k, []);
       tiles.get(k).push(b);
     }
@@ -146,114 +164,148 @@ export class City {
 
   // ---- streets ---------------------------------------------------------------------
 
+  // One quad per street between two crossings and one per crossing, each
+  // carrying what the shader needs to paint it: across/along position, half
+  // width and length (aR), and the street's kind plus which side traffic
+  // keeps to (aK). No loops in the shader, so it's cheap.
   buildStreets() {
-    const L = this.layout, W = CITY.wall;
-    const pack = (ls) => ls.map((l) => new THREE.Vector2(l.p, l.w / 2));
-    const pad = (a) => { while (a.length < 24) a.push(new THREE.Vector2(1e5, 0)); return a; };
+    const L = this.layout;
+    const P = [], R = [], KK = [];
+    const put = (corners, attrs, kind, lane) => {
+      for (const i of [0, 1, 2, 0, 2, 3]) {
+        P.push(corners[i][0], 0, corners[i][1]);
+        R.push(...attrs[i]);
+        KK.push(kind, lane);
+      }
+    };
+    for (const s of L.segs) {
+      const a = L.nodes[s.a], b = L.nodes[s.b], hw = s.hw;
+      if (s.axis === 'z') {
+        const z0 = a.z + a.hz, z1 = b.z - b.hz, x = s.ax, len = z1 - z0;
+        if (len <= 0) continue;
+        put([[x - hw, z0], [x - hw, z1], [x + hw, z1], [x + hw, z0]], [[-hw, 0, hw, len], [-hw, len, hw, len], [hw, len, hw, len], [hw, 0, hw, len]], s.kind, 1);
+      } else {
+        const x0 = a.x + a.hx, x1 = b.x - b.hx, z = s.az, len = x1 - x0;
+        if (len <= 0) continue;
+        put([[x0, z - hw], [x0, z + hw], [x1, z + hw], [x1, z - hw]], [[-hw, 0, hw, len], [hw, 0, hw, len], [hw, len, hw, len], [-hw, len, hw, len]], s.kind, -1);
+      }
+    }
+    for (const n of L.nodes) {
+      const { x, z, hx, hz } = n;
+      put([[x - hx, z - hz], [x - hx, z + hz], [x + hx, z + hz], [x + hx, z - hz]], [[-hx, -hz, hx, hz], [-hx, hz, hx, hz], [hx, hz, hx, hz], [hx, -hz, hx, hz]], n.scramble ? K.scramble : K.junction, 0);
+    }
+    const zero = [0, 0, 0, 0];
+    for (const [x0, z0, x1, z1] of L.alleys) put([[x0, z0], [x0, z1], [x1, z1], [x1, z0]], [zero, zero, zero, zero], K.alley, 0);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('aR', new THREE.Float32BufferAttribute(R, 4));
+    g.setAttribute('aK', new THREE.Float32BufferAttribute(KK, 2));
+    g.computeBoundingSphere();
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: true,
-      uniforms: {
-        ...ATMOS, uNoise: { value: textures().noise }, uRefl: this.uRefl, uWetC: this.uWetC,
-        uXs: { value: pad(pack(L.xs)) }, uZs: { value: pad(pack(L.zs)) },
-        uNx: { value: L.xs.length }, uNz: { value: L.zs.length },
-      },
-      vertexShader: WORLD_VERT,
+      uniforms: { ...ATMOS, uNoise: { value: textures().noise }, uRefl: this.uRefl, uWetC: this.uWetC },
+      vertexShader: /* glsl */`
+        attribute vec4 aR; attribute vec2 aK;
+        varying vec3 vWPos; varying vec4 vR; varying vec2 vK;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vWPos = w.xyz; vR = aR; vK = aK;
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }`,
       fragmentShader: /* glsl */`
         ${HAZE_PARS}
         uniform sampler2D uNoise; uniform float uRefl; uniform float uWetC;
-        uniform vec2 uXs[24]; uniform vec2 uZs[24]; uniform int uNx; uniform int uNz;
-        // distance to the nearest crossing street's edge along this street (signed: + before it)
-        float toCross(float v, bool alongZ) {
-          float best = 1e5;
-          for (int i = 0; i < 24; i++) {
-            if (i >= (alongZ ? uNz : uNx)) break;
-            vec2 l = alongZ ? uZs[i] : uXs[i];
-            float d = abs(v - l.x) - l.y;
-            if (d < abs(best)) best = d * sign(l.x - v + 1e-4);
-          }
-          return best;
-        }
+        varying vec4 vR; varying vec2 vK;
         float stripe(float x, float w) { float aa = fwidth(x) * 1.2; return smoothstep(w + aa, w - aa, abs(x)); }
         void main() {
           vec2 w = vWPos.xz;
           float n1 = texture2D(uNoise, w / 9.0).r, n2 = texture2D(uNoise, w / 1.7).g;
-          vec3 col = vec3(0.05, 0.05, 0.058) * (0.75 + n1 * 0.45) * (0.85 + n2 * 0.3);
-          // which streets are we on?
-          float dx = 1e5, hx = 0.0, px = 0.0, dz = 1e5, hz = 0.0, pz = 0.0;
-          for (int i = 0; i < 24; i++) { if (i >= uNx) break; float d = abs(w.x - uXs[i].x); if (d < uXs[i].y && d < dx) { dx = d; hx = uXs[i].y; px = uXs[i].x; } }
-          for (int i = 0; i < 24; i++) { if (i >= uNz) break; float d = abs(w.y - uZs[i].x); if (d < uZs[i].y && d < dz) { dz = d; hz = uZs[i].y; pz = uZs[i].x; } }
-          bool onX = dx < 1e4, onZ = dz < 1e4;
+          vec3 col = vec3(0.075, 0.075, 0.084) * (0.8 + n1 * 0.4) * (0.85 + n2 * 0.3);
+          float kind = vK.x;
           float mark = 0.0;
-          vec3 paint = vec3(0.82, 0.82, 0.8);
-          if (onX && onZ) {
-            // the scramble crossing at the centre: zebras on the diagonals too
-            if (abs(px) < 1.0 && abs(pz) < 1.0) {
-              vec2 q = w - vec2(px, pz);
-              float diag1 = abs(q.x - q.y) * 0.7071, diag2 = abs(q.x + q.y) * 0.7071;
-              float along1 = (q.x + q.y) * 0.7071, along2 = (q.x - q.y) * 0.7071;
-              float z1 = step(diag1, 2.4) * step(0.5, fract(along1 / 1.1)) * step(abs(along1), min(hx, hz) * 1.3);
-              float z2 = step(diag2, 2.4) * step(0.5, fract(along2 / 1.1)) * step(abs(along2), min(hx, hz) * 1.3);
-              mark = max(z1, z2);
-            }
-          } else if (onX || onZ) {
-            float u = onX ? w.x - px : w.y - pz;     // across the street
-            float v = onX ? w.y : w.x;               // along it
-            float hw = onX ? hx : hz;
-            float tc = toCross(v, onX);
-            float near = abs(tc);
-            // zebra crossing just before each junction, then a stop line
-            float zebra = step(0.8, near) * step(near, 4.8) * step(0.5, fract(u / 1.1)) * step(abs(u), hw - 0.7);
-            float lane = onX ? u : -u;   // traffic keeps left
-            float stopL = step(5.4, near) * step(near, 5.8) * step(0.0, lane * sign(tc)) * step(abs(u), hw - 0.7);
-            // lane lines: dashed white down the middle of streets; avenues get
-            // a solid yellow centre and dashed lanes either side
+          vec3 paint = vec3(0.86, 0.86, 0.83);
+          vec3 glow = vec3(0.0);
+          if (kind < 4.5) {
+            // a street between two crossings
+            float u = vR.x, v = vR.y, hw = vR.z, len = vR.w;
+            float toEnd = min(v, len - v);
+            float ahead = v > len * 0.5 ? 1.0 : -1.0;
+            // zebra crossing at each end, then a stop line across the lane coming in (traffic keeps left)
+            float zebra = step(0.6, toEnd) * step(toEnd, 4.6) * step(0.5, fract(u / 1.1 + 0.25)) * step(abs(u), hw - 0.7);
+            float stopL = step(5.2, toEnd) * step(toEnd, 5.6) * step(0.0, u * vK.y * ahead) * step(abs(u), hw - 0.7);
             float dash = step(fract(v / 8.0), 0.5);
-            float centre = hw > 9.0 ? max(stripe(abs(u) - 0.18, 0.08), 0.0) : stripe(u, 0.08) * dash;
-            float lanes = hw > 9.0 ? stripe(abs(abs(u) - hw * 0.5), 0.07) * dash : 0.0;
+            bool wide = hw > 8.5;
+            float centre = wide ? stripe(abs(u) - 0.18, 0.08) : stripe(u, 0.08) * dash;
+            float lanes = wide ? stripe(abs(abs(u) - hw * 0.5), 0.07) * dash : 0.0;
             float edge = stripe(abs(u) - (hw - 0.55), 0.07);
-            float inJunction = step(near, 0.8);
-            mark = max(max(zebra, stopL), (max(centre, lanes) + edge) * step(5.8, near)) * (1.0 - inJunction);
-            if (hw > 9.0 && abs(u) < 0.45 && near > 5.8) paint = vec3(0.95, 0.72, 0.2);
+            mark = max(max(zebra, stopL), (max(centre, lanes) + edge) * step(5.6, toEnd));
+            if (wide && abs(u) < 0.45 && toEnd > 5.6) paint = vec3(0.95, 0.72, 0.2);
+            // the Loop glows cyan along both edges, the ring road purple
+            float rim = stripe(abs(u) - (hw - 0.22), 0.11);
+            if (kind > 1.5 && kind < 2.5) glow = vec3(0.1, 0.85, 1.0) * rim * 2.4;
+            if (kind > 2.5 && kind < 3.5) glow = vec3(0.62, 0.3, 1.0) * rim * 2.2;
+          } else if (kind > 6.5) {
+            // the scramble crossing: zebras on the diagonals too
+            vec2 q = vR.xy;
+            float lim = min(vR.z, vR.w) * 1.3;
+            float d1 = abs(q.x - q.y) * 0.7071, d2 = abs(q.x + q.y) * 0.7071;
+            float a1 = (q.x + q.y) * 0.7071, a2 = (q.x - q.y) * 0.7071;
+            mark = max(step(d1, 2.4) * step(0.5, fract(a1 / 1.1)) * step(abs(a1), lim),
+                       step(d2, 2.4) * step(0.5, fract(a2 / 1.1)) * step(abs(a2), lim));
           }
-          mark *= 0.7 + n2 * 0.3;
-          col = mix(col, paint * 0.3, mark);
-          col *= 1.0 - uWetC * 0.35;
-          // wet asphalt: see-through toward the mirrored city below, more so at a glance
+          mark *= 0.75 + n2 * 0.25;
+          col = mix(col, paint * 0.5, mark);
+          col *= 1.0 - uWetC * 0.22;
+          col += glow;
+          // wet asphalt: just a hint of the mirrored street below, mostly at a glance
           vec3 V = normalize(vWPos - cameraPosition);
           float fres = pow(1.0 - clamp(-V.y, 0.0, 1.0), 4.0);
-          float puddle = smoothstep(0.45, 0.7, texture2D(uNoise, w / 13.0).r);
-          float refl = uRefl * uWetC * (0.16 + 0.42 * fres) * (0.45 + 0.55 * puddle) * (1.0 - mark * 0.6);
-          gl_FragColor = vec4(col, 1.0 - clamp(refl, 0.0, 0.6));
+          float puddle = smoothstep(0.5, 0.72, texture2D(uNoise, w / 13.0).r);
+          float refl = uRefl * uWetC * (0.04 + 0.2 * fres) * (0.45 + 0.55 * puddle) * (1.0 - mark * 0.7) * (1.0 - min(1.0, length(glow)));
+          gl_FragColor = vec4(col, 1.0 - clamp(refl, 0.0, 0.28));
           ${HAZE_FRAG}
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
     });
-    const g = new THREE.PlaneGeometry(W * 2, W * 2).rotateX(-Math.PI / 2);
     const road = new THREE.Mesh(g, mat);
     road.renderOrder = 2;
     this.group.add(road);
     this.road = road;
+    this.buildEdgeLights();
+  }
+
+  // Light strips along the kerbs of the Loop (cyan) and the ring road
+  // (purple): follow the colour and you know where you are.
+  buildEdgeLights() {
+    const L = this.layout, k = CITY.kerb;
+    const parts = { [K.loop]: [], [K.ring]: [] };
+    for (const s of L.segs) {
+      if (!parts[s.kind]) continue;
+      const a = L.nodes[s.a], b = L.nodes[s.b];
+      for (const side of [-1, 1]) {
+        if (s.axis === 'z') {
+          const z0 = a.z + a.hz, z1 = b.z - b.hz;
+          if (z1 > z0) parts[s.kind].push(new THREE.BoxGeometry(0.06, 0.05, z1 - z0).translate(s.ax + side * (s.hw + 0.02), k - 0.035, (z0 + z1) / 2));
+        } else {
+          const x0 = a.x + a.hx, x1 = b.x - b.hx;
+          if (x1 > x0) parts[s.kind].push(new THREE.BoxGeometry(x1 - x0, 0.05, 0.06).translate((x0 + x1) / 2, k - 0.035, s.az + side * (s.hw + 0.02)));
+        }
+      }
+    }
+    for (const [kind, col] of [[K.loop, 0x22e5ff], [K.ring, 0xa24dff]]) {
+      if (!parts[kind].length) continue;
+      const m = new THREE.Mesh(mergeGeometries(parts[kind]), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.2), toneMapped: false }));
+      this.group.add(m);
+    }
   }
 
   // Raised blocks (sidewalks and the ground under the buildings), the
   // promenade along the seawall, and the wall itself.
   buildBlocks() {
     const L = this.layout, k = CITY.kerb, geos = [];
-    const slab = (x0, z0, x1, z1, y0, y1, sides = [1, 1, 1, 1]) => {
-      const out = [];
-      out.push(quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]));
-      if (sides[0]) out.push(quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]));
-      if (sides[1]) out.push(quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]));
-      if (sides[2]) out.push(quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]));
-      if (sides[3]) out.push(quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]));
-      return out;
-    };
     for (const b of L.blocks) geos.push(...slab(b.x0, b.z0, b.x1, b.z1, -0.02, k));
-    // promenade: a frame between the ring road and the wall
-    const R = CITY.E + CITY.ring / 2, W = CITY.wall;
-    geos.push(...slab(-W, -W, W, -R, -0.02, k, [0, 0, 0, 1]), ...slab(-W, R, W, W, -0.02, k, [0, 0, 1, 0]));
-    geos.push(...slab(-W, -R, -R, R, -0.02, k, [0, 1, 0, 0]), ...slab(R, -R, W, R, -0.02, k, [1, 0, 0, 0]));
+    for (const [x0, z0, x1, z1] of L.promenade) geos.push(...slab(x0, z0, x1, z1, -0.02, k));
     const mat = new THREE.ShaderMaterial({
       uniforms: { ...ATMOS, uNoise: { value: textures().noise }, uWetC: this.uWetC },
       vertexShader: WORLD_VERT_N,
@@ -269,13 +321,13 @@ export class City {
             // paving slabs
             vec2 g = abs(fract(w / 0.9) - 0.5);
             float aa = fwidth(w.x / 0.9) * 1.5;
-            float grout = 1.0 - smoothstep(0.44 - aa, 0.5, max(g.x, g.y)) * 0.45;
-            float tone = 0.8 + 0.4 * fract(sin(dot(floor(w / 0.9), vec2(12.9898, 78.233))) * 43758.5);
+            float grout = 1.0 - smoothstep(0.44 - aa, 0.5, max(g.x, g.y)) * 0.35;
+            float tone = 0.9 + 0.2 * fract(sin(dot(floor(w / 0.9), vec2(12.9898, 78.233))) * 43758.5);
             col = vec3(0.075, 0.072, 0.08) * tone * grout * (0.85 + n * 0.3);
             // wet sheen of the glowing haze
             vec3 V = normalize(vWPos - cameraPosition);
             float fres = pow(1.0 - clamp(-V.y, 0.0, 1.0), 5.0);
-            col = mix(col * (1.0 - uWetC * 0.3), uFogColor * 0.9, fres * uWetC * 0.5);
+            col = mix(col * (1.0 - uWetC * 0.3), uFogColor * 0.9, fres * uWetC * 0.4);
           } else {
             col = vec3(0.11, 0.105, 0.11) * (0.8 + n * 0.4);   // kerb stones
           }
@@ -288,15 +340,38 @@ export class City {
     this.blocks = new THREE.Mesh(mergeGeometries(geos), mat);
     this.group.add(this.blocks);
     // the seawall, with a strip of light along the top
-    const t = 1.2, h = 1.1, walls = [];
-    for (const [x0, z0, x1, z1] of [[-W - t, -W - t, W + t, -W], [-W - t, W, W + t, W + t], [-W - t, -W, -W, W], [W, -W, W + t, W]]) walls.push(...slab(x0, z0, x1, z1, -2, h));
+    const h = 1.1, walls = [], strips = [];
+    for (const [x0, z0, x1, z1] of L.walls) {
+      walls.push(...slab(x0, z0, x1, z1, -2, h));
+      strips.push(new THREE.BoxGeometry(x1 - x0, 0.06, z1 - z0).scale(x1 - x0 > z1 - z0 ? 1 : 0.1, 1, x1 - x0 > z1 - z0 ? 0.1 : 1).translate((x0 + x1) / 2, h + 0.03, (z0 + z1) / 2));
+    }
     this.wall = new THREE.Mesh(mergeGeometries(walls), patch(new THREE.MeshLambertMaterial({ color: 0x3a3842 })));
     this.group.add(this.wall);
-    const strip = new THREE.Mesh(mergeGeometries([
-      new THREE.BoxGeometry(W * 2, 0.06, 0.12).translate(0, h + 0.03, -W - 0.15), new THREE.BoxGeometry(W * 2, 0.06, 0.12).translate(0, h + 0.03, W + 0.15),
-      new THREE.BoxGeometry(0.12, 0.06, W * 2).translate(-W - 0.15, h + 0.03, 0), new THREE.BoxGeometry(0.12, 0.06, W * 2).translate(W + 0.15, h + 0.03, 0),
-    ]), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x22e5ff).multiplyScalar(1.6), toneMapped: false }));
-    this.group.add(strip);
+    this.group.add(new THREE.Mesh(mergeGeometries(strips), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x22e5ff).multiplyScalar(1.6), toneMapped: false })));
+  }
+
+  // ---- harbour container yards -----------------------------------------------------------
+
+  buildContainers() {
+    const list = this.layout.containers;
+    const count = list.reduce((n, c) => n + c.levels, 0);
+    if (!count) return;
+    const cols = ['#7a2626', '#22507a', '#276e46', '#a85a1a', '#4a4f58', '#6a2a5e'];
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), patch(new THREE.MeshLambertMaterial()), count);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    let i = 0;
+    for (const c of list) {
+      for (let lv = 0; lv < c.levels; lv++) {
+        s.set(c.alongX ? 12.2 : 2.44, 2.59, c.alongX ? 2.44 : 12.2);
+        im.setMatrixAt(i, m.compose(p.set(c.x, CITY.kerb + 1.3 + lv * 2.6, c.z), q, s));
+        im.setColorAt(i, _c.set(cols[c.colors[lv]]));
+        i++;
+      }
+    }
+    im.instanceMatrix.needsUpdate = true;
+    im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    this.group.add(im);
   }
 
   // ---- signs -----------------------------------------------------------------------
@@ -470,10 +545,9 @@ export class City {
   // ---- the bay ---------------------------------------------------------------------------
 
   buildBay() {
-    // dark water all round, outside the seawall only (under the city it
-    // would hide the reflections)
-    const W = CITY.wall + 1.2, F = 6000, y = -1.6;
-    const parts = [[-F, -F, F, -W], [-F, W, F, F], [-F, -W, -W, W], [W, -W, F, W]].map(([x0, z0, x1, z1]) => quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]));
+    // dark water outside the seawall only (under the city it would hide the reflections)
+    const y = -1.6;
+    const parts = this.layout.water.map(([x0, z0, x1, z1]) => quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]));
     const mat = new THREE.ShaderMaterial({
       uniforms: { ...ATMOS, uNoise: { value: textures().noise } },
       vertexShader: WORLD_VERT,
@@ -494,7 +568,6 @@ export class City {
           #include <colorspace_fragment>
         }`,
     });
-    mat.uniforms.uTime = ATMOS.uTime;
     this.water = new THREE.Mesh(mergeGeometries(parts), mat);
     this.group.add(this.water);
   }
@@ -507,6 +580,10 @@ export class City {
       if (o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
       for (const m of [].concat(o.material || [])) if (!seen.has(m)) { seen.add(m); m.dispose(); }
     });
+    if (this.beacons) {
+      this.scene.remove(this.beacons);
+      this.beacons.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
+    }
     this.vendTex?.dispose();
   }
 }
@@ -519,6 +596,16 @@ function quad(a, b, c, d) {
   g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...d], 3));
   g.computeVertexNormals();
   return g;
+}
+
+// A raised rectangle: its top and (optionally) its four sides.
+function slab(x0, z0, x1, z1, y0, y1, sides = [1, 1, 1, 1]) {
+  const out = [quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0])];
+  if (sides[0]) out.push(quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]));
+  if (sides[1]) out.push(quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]));
+  if (sides[2]) out.push(quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]));
+  if (sides[3]) out.push(quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]));
+  return out;
 }
 
 // Boxes for a list of buildings (one per tier), with what the facade shader
@@ -609,14 +696,14 @@ function buildingMaterial(mirror) {
           #ifdef MIRROR
             u += sin(y * 0.9 + uTime * 1.6) * 0.18;     // ripples in the puddles
           #endif
-          float cw = style < 0.5 ? 3.0 : style < 1.5 ? 2.5 : style < 2.5 ? 1.7 : 3.3;
+          float cw = style < 0.5 ? 3.0 : style < 1.5 ? 2.5 : style < 2.5 ? 1.7 : style < 3.5 ? 3.3 : 3.0;
           vec2 cell = vec2(u / cw, (y - 0.6) / 3.6);
           vec2 id = floor(cell), f = fract(cell);
-          vec2 win = style < 0.5 ? vec2(0.84, 0.6) : style < 1.5 ? vec2(0.58, 0.52) : style < 2.5 ? vec2(0.9, 0.82) : vec2(0.55, 0.5);
+          vec2 win = style < 0.5 ? vec2(0.84, 0.6) : style < 1.5 ? vec2(0.58, 0.52) : style < 2.5 ? vec2(0.9, 0.82) : style < 3.5 ? vec2(0.55, 0.5) : vec2(0.96, 0.3);
           vec2 aa = max(fwidth(cell) * 1.5, vec2(1e-4));
           float mask = smoothstep(0.5 * win.x + aa.x, 0.5 * win.x - aa.x, abs(f.x - 0.5))
                      * smoothstep(0.5 * win.y + aa.y, 0.5 * win.y - aa.y, abs(f.y - 0.5));
-          float lr = style < 0.5 ? 0.5 : style < 1.5 ? 0.36 : style < 2.5 ? 0.28 : 0.42;
+          float lr = style < 0.5 ? 0.5 : style < 1.5 ? 0.36 : style < 2.5 ? 0.28 : style < 3.5 ? 0.42 : 0.62;
           float r = hash(id + seed * 113.0);
           float lit = step(r, lr);
           // now and then a light goes on or off
@@ -625,6 +712,7 @@ function buildingMaterial(mirror) {
           vec3 wc = c < 0.42 ? vec3(1.0, 0.62, 0.3) : c < 0.78 ? vec3(0.9, 0.92, 1.0) : c < 0.93 ? vec3(0.55, 0.72, 1.0) : vC;
           wc *= 0.55 + 0.8 * hash(id + 3.1);
           if (style > 1.5 && style < 2.5) wc = mix(wc, vec3(0.5, 0.7, 1.0), 0.45);
+          if (style > 3.5) wc = mix(wc, vec3(0.6, 0.95, 1.0), 0.6);   // tech campus: cool ribbon windows
           vec3 glass = vec3(0.012, 0.014, 0.024) + uFogColor * 0.15;
           vec3 winCol = mix(glass, wc * 1.1 * (0.8 + 0.3 * f.y), lit);
           // windows too small to draw blend into their average (no shimmer)
@@ -635,13 +723,27 @@ function buildingMaterial(mirror) {
           #endif
           col = mix(mix(wall, winCol, mask), avg, far);
           // shop fronts on the ground floor: lit, or shuttered for the night
-          if (vB.w > 0.5 && y < 3.4) {
+          if (vB.w > 0.5 && y < 3.4 && style < 3.5) {
             float sh = hash(vec2(floor(u / 6.0), seed * 50.0));
             // lit shops (warm, white or tinted by the street's neon), or shutters
             vec3 inside = sh < 0.3 ? vec3(1.0, 0.78, 0.5) : sh < 0.5 ? vec3(0.85, 0.9, 1.0) : mix(vec3(0.9), vC, 0.6);
             vec3 shop = sh < 0.68 ? inside * (0.45 + 0.35 * smoothstep(3.0, 0.4, y)) : vec3(0.04, 0.04, 0.05) * (0.8 + 0.4 * step(0.5, fract(y * 6.0)));
             float pane = step(0.08, fract(u / 2.0)) * step(0.35, y) * step(y, 3.0);
             col = mix(wall * 1.2, shop, pane);
+          }
+          if (style > 4.5) {
+            // warehouse: ribbed metal walls, a row of small high windows, loading doors with a light over each
+            col = wall * 1.5 * (0.85 + 0.15 * step(0.5, fract(u / 0.6)));
+            float band = step(top - 3.2, y) * step(y, top - 2.0) * step(0.3, fract(u / 4.0)) * step(fract(u / 4.0), 0.7);
+            float litw = step(0.55, hash(vec2(floor(u / 4.0), seed * 31.0)));
+            col = mix(col, mix(vec3(0.02), vec3(1.0, 0.7, 0.35) * 0.8, litw), band);
+            float door = step(fract(u / 12.0), 0.4) * step(y, 4.5) * vB.w;
+            col = mix(col, wall * 0.5, door);
+            col += vec3(1.0, 0.6, 0.25) * 0.7 * step(fract(u / 12.0), 0.4) * step(4.6, y) * step(y, 4.8) * vB.w;
+          }
+          if (style > 3.5 && style < 4.5) {
+            // tech campus: a line of light every third floor
+            col += vC * 1.3 * smoothstep(0.035, 0.0, abs(fract((y - 0.6) / 10.8) - 0.02));
           }
           // the street's neon washes up the lower floors
           col += vC * 0.07 * exp(-y / 10.0);
@@ -769,33 +871,3 @@ function vendingTexture() {
   return VEND;
 }
 
-// ---- map ------------------------------------------------------------------------------
-
-// The city as the full-screen map and minimap draw it (2048 px square over
-// the whole extent; the same projection as the island map).
-function paintMap(L) {
-  const SIZE = 2048, ext = CITY.extent, k = SIZE / (ext * 2);
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  const g = c.getContext('2d');
-  const X = (x) => (ext - x) * k, Z = (z) => (ext - z) * k;
-  const rect = (x0, z0, x1, z1) => g.fillRect(X(x1), Z(z1), (x1 - x0) * k, (z1 - z0) * k);
-  g.fillStyle = '#0a0f22';
-  g.fillRect(0, 0, SIZE, SIZE);
-  const W = CITY.wall;
-  g.fillStyle = '#9c97ad';
-  rect(-W, -W, W, W);
-  g.fillStyle = '#26232f';
-  for (const b of L.blocks) rect(b.x0, b.z0, b.x1, b.z1);
-  const R = CITY.E + CITY.ring / 2;
-  rect(-W, -W, W, -R); rect(-W, R, W, W); rect(-W, -R, -R, R); rect(R, -R, W, R);
-  for (const b of L.buildings) {
-    _c.set(NEON[b.neon]);
-    g.fillStyle = `rgb(${40 + _c.r * 30 | 0},${34 + _c.g * 22 | 0},${52 + _c.b * 30 | 0})`;
-    rect(...b.box);
-  }
-  g.strokeStyle = '#22e5ff';
-  g.lineWidth = 3;
-  g.strokeRect(X(W), Z(W), W * 2 * k, W * 2 * k);
-  return c;
-}
