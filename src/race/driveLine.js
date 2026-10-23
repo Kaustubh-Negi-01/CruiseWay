@@ -22,13 +22,12 @@ const BLUE = new THREE.Color(0x2ad8ff), YELLOW = new THREE.Color(0xffd23f), RED 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1);
 const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _c = new THREE.Color();
 
-// A flat chevron (a "^" pointing along +z), about 3 m wide: bold enough to
-// read from a low chase camera.
+// A flat chevron (a "^" pointing along +z), about 1.9 m wide with slim arms.
 function chevronGeometry() {
   const arm = (side) => {
-    const g = new THREE.PlaneGeometry(0.5, 1.9).rotateX(-Math.PI / 2);
-    g.rotateY(-side * 0.95);   // front ends meet in the middle, back ends spread out
-    g.translate(side * 0.72, 0, -0.45);
+    const g = new THREE.PlaneGeometry(0.26, 1.4).rotateX(-Math.PI / 2);
+    g.rotateY(-side * 0.8);    // front ends meet in the middle, back ends spread out
+    g.translate(side * 0.46, 0, -0.4);
     return g;
   };
   const a = arm(1), b = arm(-1);
